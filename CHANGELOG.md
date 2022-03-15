@@ -11,4 +11,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial release.
 
 [Unreleased]: https://github.com/rust-playground/ksql/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/rust-playground/ksql/commit/55f4ffca5f12ebce195d6b53cf2d2f92c9036614
+[0.1.0]: https://github.com/rust-playground/ksql/commit/03fa237a7e2fe5f15de609e3da3c87f5dbed8805
