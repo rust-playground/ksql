@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2] - 2022-03-14
+### Fixed
+- Fixed README + leftover docs.
+
 ## [0.1.1] - 2022-03-14
 ### Fixed
 - Fixed Cargo.toml for publishing.
@@ -15,5 +19,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial release.
 
 [Unreleased]: https://github.com/rust-playground/ksql/compare/v0.1.0...HEAD
+[0.1.2]: https://github.com/rust-playground/ksql/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/rust-playground/ksql/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/rust-playground/ksql/commit/03fa237a7e2fe5f15de609e3da3c87f5dbed8805

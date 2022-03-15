@@ -1,3 +1,4 @@
+#### Syntax & Rules
 
 | Token          | Example         | Syntax Rules                                       |
 |----------------|-----------------|----------------------------------------------------|
@@ -26,8 +27,3 @@
 | `StartsWith`   | `STARTSWITH `   | Ends with a ` ` blank space.                       |
 | `EndsWith`     | `ENDSWITH `     | Ends with a ` ` blank space.                       |
 | `NULL`         | `NULL `         | N/A                                                |
-
-
-TODO: Enhance number parser to accept exponents
-
-TODO: Add `LEN` operator
