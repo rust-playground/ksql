@@ -1,5 +1,6 @@
 # ksql &emsp; [![Latest Version]][crates.io]
 
+[Latest Version]: https://img.shields.io/crates/v/ksql.svg
 [crates.io]: https://crates.io/crates/ksql
 
 **Is a JSON data expression lexer, parser, cli and library.**
