@@ -56,7 +56,7 @@ impl<'a> From<gjson::Value<'a>> for Value {
             Kind::False => Value::Bool(false),
             Kind::True => Value::Bool(true),
             Kind::Array => {
-                let arr = v.array().into_iter().map(|v| v.into()).collect();
+                let arr = v.array().into_iter().map(Into::into).collect();
                 Value::Array(arr)
             }
             Kind::Object => {
@@ -72,6 +72,12 @@ impl<'a> From<gjson::Value<'a>> for Value {
 }
 
 pub trait Expression: Debug {
+    /// Will execute the parsed expression and apply it against the supplied data.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if the expression cannot be applied to the supplied data due to invalid
+    /// data type comparisons.
     fn calculate(&self, src: &str) -> Result<Value>;
 }
 
@@ -80,6 +86,12 @@ type BoxedExpression = Box<dyn Expression>;
 pub struct Parser;
 
 impl Parser {
+    /// parses the provided expression and turning it into a computation that can be applied to some
+    /// source data.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` the expression is invalid.
     pub fn parse(expression: &[u8]) -> anyhow::Result<BoxedExpression> {
         let tokens = Tokenizer::tokenize(expression)?;
         let mut pos = 0;
@@ -114,16 +126,13 @@ fn parse_value(tokens: &[Token], pos: &mut usize) -> anyhow::Result<Option<Boxed
             Some(v) => Ok(Some(v)),
             None => Err(anyhow!(" value required after comma: {:?}", tok)),
         },
-        Some(Token::CloseBracket) => Ok(None),
         Some(Token::OpenParen) => {
             let op =
                 parse_value(tokens, pos)?.map_or_else(|| Err(anyhow!("no value between (")), Ok)?;
-
-            // let operation = Operation { op };
             parse_op(op, tokens, pos)
         }
         Some(Token::CloseParen) => Err(anyhow!("no value between (")),
-        None => Ok(None),
+        Some(Token::CloseBracket) | None => Ok(None),
         _ => Err(anyhow!("invalid value: {:?}", tok)),
     }
 }
@@ -139,118 +148,84 @@ fn parse_op(
         Some(Token::In) => {
             let right =
                 parse_value(tokens, pos)?.map_or_else(|| Err(anyhow!("no value after IN")), Ok)?;
-
-            let inn = In { left: value, right };
-            Ok(Some(Box::new(inn)))
+            Ok(Some(Box::new(In { left: value, right })))
         }
         Some(Token::Contains) => {
             let right = parse_value(tokens, pos)?
                 .map_or_else(|| Err(anyhow!("no value after CONTAINS")), Ok)?;
-
-            let contains = Contains { left: value, right };
-            Ok(Some(Box::new(contains)))
+            Ok(Some(Box::new(Contains { left: value, right })))
         }
         Some(Token::StartsWith) => {
             let right = parse_value(tokens, pos)?
                 .map_or_else(|| Err(anyhow!("no value after STARTSWITH")), Ok)?;
-
-            let starts_with = StartsWith { left: value, right };
-            Ok(Some(Box::new(starts_with)))
+            Ok(Some(Box::new(StartsWith { left: value, right })))
         }
         Some(Token::EndsWith) => {
             let right = parse_value(tokens, pos)?
                 .map_or_else(|| Err(anyhow!("no value after ENDSWITH")), Ok)?;
-
-            let ends_with = EndsWith { left: value, right };
-            Ok(Some(Box::new(ends_with)))
+            Ok(Some(Box::new(EndsWith { left: value, right })))
         }
         Some(Token::And) => {
             let right =
                 parse_value(tokens, pos)?.map_or_else(|| Err(anyhow!("no value after AND")), Ok)?;
-
-            let and = And { left: value, right };
-            Ok(Some(Box::new(and)))
+            Ok(Some(Box::new(And { left: value, right })))
         }
         Some(Token::Or) => {
             let right =
                 parse_value(tokens, pos)?.map_or_else(|| Err(anyhow!("no value after OR")), Ok)?;
-
-            let or = Or { left: value, right };
-            Ok(Some(Box::new(or)))
+            Ok(Some(Box::new(Or { left: value, right })))
         }
         Some(Token::Gt) => {
             let right =
                 parse_value(tokens, pos)?.map_or_else(|| Err(anyhow!("no value after >")), Ok)?;
-
-            let gt = Gt { left: value, right };
-            Ok(Some(Box::new(gt)))
+            Ok(Some(Box::new(Gt { left: value, right })))
         }
         Some(Token::Gte) => {
             let right =
                 parse_value(tokens, pos)?.map_or_else(|| Err(anyhow!("no value after >=")), Ok)?;
-
-            let gte = Gte { left: value, right };
-            Ok(Some(Box::new(gte)))
+            Ok(Some(Box::new(Gte { left: value, right })))
         }
         Some(Token::Lt) => {
             let right =
                 parse_value(tokens, pos)?.map_or_else(|| Err(anyhow!("no value after <")), Ok)?;
-
-            let lt = Lt { left: value, right };
-            Ok(Some(Box::new(lt)))
+            Ok(Some(Box::new(Lt { left: value, right })))
         }
         Some(Token::Lte) => {
             let right =
                 parse_value(tokens, pos)?.map_or_else(|| Err(anyhow!("no value after <=")), Ok)?;
-
-            let lte = Lte { left: value, right };
-            Ok(Some(Box::new(lte)))
+            Ok(Some(Box::new(Lte { left: value, right })))
         }
         Some(Token::Equals) => {
             let right =
                 parse_value(tokens, pos)?.map_or_else(|| Err(anyhow!("no value after =")), Ok)?;
-
-            let eq = Eq { left: value, right };
-            Ok(Some(Box::new(eq)))
+            Ok(Some(Box::new(Eq { left: value, right })))
         }
         Some(Token::Add) => {
             let right =
                 parse_value(tokens, pos)?.map_or_else(|| Err(anyhow!("no value after +")), Ok)?;
-
-            let add = Add { left: value, right };
-            Ok(Some(Box::new(add)))
+            Ok(Some(Box::new(Add { left: value, right })))
         }
         Some(Token::Subtract) => {
             let right =
                 parse_value(tokens, pos)?.map_or_else(|| Err(anyhow!("no value after -")), Ok)?;
-
-            let sub = Sub { left: value, right };
-            Ok(Some(Box::new(sub)))
+            Ok(Some(Box::new(Sub { left: value, right })))
         }
         Some(Token::Multiply) => {
             let right =
                 parse_value(tokens, pos)?.map_or_else(|| Err(anyhow!("no value after *")), Ok)?;
-
-            let mult = Mult { left: value, right };
-            Ok(Some(Box::new(mult)))
+            Ok(Some(Box::new(Mult { left: value, right })))
         }
         Some(Token::Divide) => {
             let right =
                 parse_value(tokens, pos)?.map_or_else(|| Err(anyhow!("no value after /")), Ok)?;
-
-            let div = Div { left: value, right };
-            Ok(Some(Box::new(div)))
+            Ok(Some(Box::new(Div { left: value, right })))
         }
-        Some(Token::CloseBracket) => Ok(Some(value)),
         Some(Token::OpenParen) => {
             let op =
                 parse_value(tokens, pos)?.map_or_else(|| Err(anyhow!("no value between (")), Ok)?;
-
-            // let operation = Operation { op };
             parse_op(op, tokens, pos)
         }
-        Some(Token::CloseParen) => Ok(Some(value)),
-        None => Ok(Some(value)),
+        Some(Token::CloseBracket | Token::CloseParen) | None => Ok(Some(value)),
         _ => Err(anyhow!("invalid token after ident '{:?}'", tok.unwrap())),
     }
 }
@@ -628,7 +603,7 @@ struct Arr {
 impl Expression for Arr {
     fn calculate(&self, src: &str) -> Result<Value> {
         let mut arr = Vec::new();
-        for e in self.arr.iter() {
+        for e in &self.arr {
             arr.push(e.calculate(src)?);
         }
         Ok(Value::Array(arr))

@@ -32,7 +32,7 @@ pub enum Token {
 }
 
 /// Try to lex a single token from the input stream.
-pub fn tokenize_single_token(data: &[u8]) -> Result<(Token, usize)> {
+fn tokenize_single_token(data: &[u8]) -> Result<(Token, usize)> {
     let b = match data.get(0) {
         Some(b) => b,
         None => panic!("invalid data passed"),
@@ -53,16 +53,15 @@ pub fn tokenize_single_token(data: &[u8]) -> Result<(Token, usize)> {
         b'[' => (Token::OpenBracket, 1),
         b']' => (Token::CloseBracket, 1),
         b',' => (Token::Comma, 1),
-        b'"' => tokenize_string_double_quote(data)?,
-        b'\'' => tokenize_string_single_quote(data)?,
+        b'"' | b'\'' => tokenize_string(data, *b)?,
         b'.' => tokenize_identifier(data)?,
         b't' | b'f' => tokenize_bool(data)?,
-        b'A' => tokenize_and(data)?,
-        b'O' => tokenize_or(data)?,
-        b'C' => tokenize_contains(data)?,
-        b'I' => tokenize_in(data)?,
-        b'S' => tokenize_starts_with(data)?,
-        b'E' => tokenize_ends_with(data)?,
+        b'A' => tokenize_keyword(data, "AND", Token::And)?,
+        b'O' => tokenize_keyword(data, "OR", Token::Or)?,
+        b'C' => tokenize_keyword(data, "CONTAINS", Token::Contains)?,
+        b'I' => tokenize_keyword(data, "IN", Token::In)?,
+        b'S' => tokenize_keyword(data, "STARTSWITH", Token::StartsWith)?,
+        b'E' => tokenize_keyword(data, "ENDSWITH", Token::EndsWith)?,
         b'N' => tokenize_null(data)?,
         c if c.is_ascii_digit() => tokenize_number(data)?,
         _ => return Err(Error::UnsupportedCharacter(*b)),
@@ -70,16 +69,14 @@ pub fn tokenize_single_token(data: &[u8]) -> Result<(Token, usize)> {
     Ok((token, end))
 }
 
-#[inline]
-fn tokenize_and(data: &[u8]) -> Result<(Token, usize)> {
-    match take_while(data, |c| c != b' ') {
-        Some((_, end)) => match String::from_utf8_lossy(&data[..end]).as_ref() {
-            "AND" if data.len() > 3 => Ok((Token::And, end)),
-            _ => Err(Error::InvalidOperator(
-                String::from_utf8_lossy(data).to_string(),
-            )),
-        },
-        None => Err(Error::InvalidOperator(
+fn tokenize_keyword(data: &[u8], keyword: &str, kind: Token) -> Result<(Token, usize)> {
+    match take_while(data, |c| !c.is_ascii_whitespace()) {
+        Some(end)
+            if String::from_utf8_lossy(&data[..end]) == keyword && data.len() > keyword.len() =>
+        {
+            Ok((kind, end))
+        }
+        _ => Err(Error::InvalidKeyword(
             String::from_utf8_lossy(data).to_string(),
         )),
     }
@@ -88,88 +85,8 @@ fn tokenize_and(data: &[u8]) -> Result<(Token, usize)> {
 #[inline]
 fn tokenize_null(data: &[u8]) -> Result<(Token, usize)> {
     match take_while(data, |c| c.is_ascii_alphabetic()) {
-        Some((_, end)) => match String::from_utf8_lossy(&data[..end]).as_ref() {
-            "NULL" => Ok((Token::Null, end)),
-            _ => Err(Error::InvalidOperator(
-                String::from_utf8_lossy(data).to_string(),
-            )),
-        },
-        None => Err(Error::InvalidOperator(
-            String::from_utf8_lossy(data).to_string(),
-        )),
-    }
-}
-
-#[inline]
-fn tokenize_ends_with(data: &[u8]) -> Result<(Token, usize)> {
-    match take_while(data, |c| c != b' ') {
-        Some((_, end)) => match String::from_utf8_lossy(&data[..end]).as_ref() {
-            "ENDSWITH" if data.len() > 8 => Ok((Token::EndsWith, end)),
-            _ => Err(Error::InvalidOperator(
-                String::from_utf8_lossy(data).to_string(),
-            )),
-        },
-        None => Err(Error::InvalidOperator(
-            String::from_utf8_lossy(data).to_string(),
-        )),
-    }
-}
-
-#[inline]
-fn tokenize_starts_with(data: &[u8]) -> Result<(Token, usize)> {
-    match take_while(data, |c| c != b' ') {
-        Some((_, end)) => match String::from_utf8_lossy(&data[..end]).as_ref() {
-            "STARTSWITH" if data.len() > 10 => Ok((Token::StartsWith, end)),
-            _ => Err(Error::InvalidOperator(
-                String::from_utf8_lossy(data).to_string(),
-            )),
-        },
-        None => Err(Error::InvalidOperator(
-            String::from_utf8_lossy(data).to_string(),
-        )),
-    }
-}
-
-#[inline]
-fn tokenize_in(data: &[u8]) -> Result<(Token, usize)> {
-    match take_while(data, |c| c != b' ') {
-        Some((_, end)) => match String::from_utf8_lossy(&data[..end]).as_ref() {
-            "IN" if data.len() > 2 => Ok((Token::In, end)),
-            _ => Err(Error::InvalidOperator(
-                String::from_utf8_lossy(data).to_string(),
-            )),
-        },
-        None => Err(Error::InvalidOperator(
-            String::from_utf8_lossy(data).to_string(),
-        )),
-    }
-}
-
-#[inline]
-fn tokenize_contains(data: &[u8]) -> Result<(Token, usize)> {
-    match take_while(data, |c| c != b' ') {
-        Some((_, end)) => match String::from_utf8_lossy(&data[..end]).as_ref() {
-            "CONTAINS" if data.len() > 8 => Ok((Token::Contains, end)),
-            _ => Err(Error::InvalidOperator(
-                String::from_utf8_lossy(data).to_string(),
-            )),
-        },
-        None => Err(Error::InvalidOperator(
-            String::from_utf8_lossy(data).to_string(),
-        )),
-    }
-}
-
-#[inline]
-fn tokenize_or(data: &[u8]) -> Result<(Token, usize)> {
-    match take_while(data, |c| c != b' ') {
-        Some((_, end)) => match String::from_utf8_lossy(&data[..end]).as_ref() {
-            "OR" if data.len() > 2 => Ok((Token::Or, end)),
-            _ => Err(Error::InvalidOperator(
-                String::from_utf8_lossy(data).to_string(),
-            )),
-        },
-        None => Err(Error::InvalidOperator(
+        Some(end) if String::from_utf8_lossy(&data[..end]) == "NULL" => Ok((Token::Null, end)),
+        _ => Err(Error::InvalidKeyword(
             String::from_utf8_lossy(data).to_string(),
         )),
     }
@@ -177,8 +94,8 @@ fn tokenize_or(data: &[u8]) -> Result<(Token, usize)> {
 
 #[inline]
 fn tokenize_identifier(data: &[u8]) -> Result<(Token, usize)> {
-    match take_while(&data[1..], |c| c != b' ') {
-        Some((_, mut end)) => {
+    match take_while(&data[1..], |c| !c.is_ascii_whitespace()) {
+        Some(mut end) => {
             if data.len() > end {
                 end += 1;
             }
@@ -196,7 +113,7 @@ fn tokenize_identifier(data: &[u8]) -> Result<(Token, usize)> {
 #[inline]
 fn tokenize_bool(data: &[u8]) -> Result<(Token, usize)> {
     match take_while(data, |c| c.is_ascii_alphabetic()) {
-        Some((_, end)) => match String::from_utf8_lossy(&data[..end]).as_ref() {
+        Some(end) => match String::from_utf8_lossy(&data[..end]).as_ref() {
             "true" => Ok((Token::Boolean(true), end)),
             "false" => Ok((Token::Boolean(false), end)),
             _ => Err(Error::InvalidBool(
@@ -225,31 +142,22 @@ fn tokenize_number(data: &[u8]) -> Result<(Token, usize)> {
             }
         }
         b'-' | b'+' => true,
-        c if c.is_ascii_alphanumeric() => true,
-        _ => false,
+        _ => c.is_ascii_alphanumeric(),
     }) {
-        Some((_, end)) => {
-            if bad_number {
-                Err(Error::InvalidNumber(
-                    String::from_utf8_lossy(data).to_string(),
-                ))
-            } else {
-                match String::from_utf8_lossy(&data[..end]).parse::<f64>() {
-                    Ok(n) => Ok((Token::Number(n), end)),
-                    _ => Err(Error::InvalidNumber(
-                        String::from_utf8_lossy(&data[..end]).to_string(),
-                    )),
-                }
-            }
-        }
-        None => Err(Error::InvalidNumber(
+        Some(end) if !bad_number => match String::from_utf8_lossy(&data[..end]).parse::<f64>() {
+            Ok(n) => Ok((Token::Number(n), end)),
+            _ => Err(Error::InvalidNumber(
+                String::from_utf8_lossy(&data[..end]).to_string(),
+            )),
+        },
+        _ => Err(Error::InvalidNumber(
             String::from_utf8_lossy(data).to_string(),
         )),
     }
 }
 
 #[inline]
-fn tokenize_string_single_quote(data: &[u8]) -> Result<(Token, usize)> {
+fn tokenize_string(data: &[u8], quote: u8) -> Result<(Token, usize)> {
     let mut last_backslash = false;
     let mut ended_with_terminator = false;
 
@@ -258,7 +166,7 @@ fn tokenize_string_single_quote(data: &[u8]) -> Result<(Token, usize)> {
             last_backslash = true;
             true
         }
-        b'\'' => {
+        _ if c == quote => {
             if last_backslash {
                 last_backslash = false;
                 true
@@ -272,66 +180,15 @@ fn tokenize_string_single_quote(data: &[u8]) -> Result<(Token, usize)> {
             true
         }
     }) {
-        Some((_, end)) => {
-            if !ended_with_terminator {
-                Err(Error::UnterminatedString(
-                    String::from_utf8_lossy(data).to_string(),
-                ))
-            } else {
+        Some(end) => {
+            if ended_with_terminator {
                 Ok((
-                    Token::String(String::from_utf8_lossy(&data[1..end + 1]).to_string()),
+                    Token::String(String::from_utf8_lossy(&data[1..=end]).to_string()),
                     end + 2,
                 ))
-            }
-        }
-        None => {
-            if !ended_with_terminator || data.len() < 2 {
+            } else {
                 Err(Error::UnterminatedString(
                     String::from_utf8_lossy(data).to_string(),
-                ))
-            } else {
-                Ok((
-                    Token::String(String::from_utf8_lossy(&data[..0]).to_string()),
-                    1,
-                ))
-            }
-        }
-    }
-}
-
-#[inline]
-fn tokenize_string_double_quote(data: &[u8]) -> Result<(Token, usize)> {
-    let mut last_backslash = false;
-    let mut ended_with_terminator = false;
-
-    match take_while(&data[1..], |c| match c {
-        b'\\' => {
-            last_backslash = true;
-            true
-        }
-        b'"' => {
-            if last_backslash {
-                last_backslash = false;
-                true
-            } else {
-                ended_with_terminator = true;
-                false
-            }
-        }
-        _ => {
-            last_backslash = false;
-            true
-        }
-    }) {
-        Some((_, end)) => {
-            if !ended_with_terminator {
-                Err(Error::UnterminatedString(
-                    String::from_utf8_lossy(data).to_string(),
-                ))
-            } else {
-                Ok((
-                    Token::String(String::from_utf8_lossy(&data[1..end + 1]).to_string()),
-                    end + 2,
                 ))
             }
         }
@@ -352,15 +209,12 @@ fn tokenize_string_double_quote(data: &[u8]) -> Result<(Token, usize)> {
 
 #[inline]
 fn skip_whitespace(data: &[u8]) -> usize {
-    match take_while(data, |c| c.is_ascii_whitespace()) {
-        Some((_, bytes_skipped)) => bytes_skipped,
-        None => 0,
-    }
+    take_while(data, |c| c.is_ascii_whitespace()).unwrap_or(0)
 }
 
 #[inline]
 /// Consumes bytes while a predicate evaluates to true.
-fn take_while<F>(data: &[u8], mut pred: F) -> Option<(&[u8], usize)>
+fn take_while<F>(data: &[u8], mut pred: F) -> Option<usize>
 where
     F: FnMut(u8) -> bool,
 {
@@ -376,7 +230,7 @@ where
     if current_index == 0 {
         None
     } else {
-        Some((&data[..current_index], current_index))
+        Some(current_index)
     }
 }
 
@@ -386,14 +240,14 @@ pub struct Tokenizer<'a> {
 }
 
 impl<'a> Tokenizer<'a> {
-    pub fn new(src: &[u8]) -> Tokenizer {
+    fn new(src: &[u8]) -> Tokenizer {
         Tokenizer {
             current_index: 0,
             remaining_bytes: src,
         }
     }
 
-    pub fn next_token(&mut self) -> Result<Option<Token>> {
+    fn next_token(&mut self) -> Result<Option<Token>> {
         self.skip_whitespace();
 
         if self.remaining_bytes.is_empty() {
@@ -404,6 +258,11 @@ impl<'a> Tokenizer<'a> {
         }
     }
 
+    /// lexes the provided expression.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if the expression is invalid.
     pub fn tokenize(src: &[u8]) -> Result<Vec<Token>> {
         let mut tokenizer = Tokenizer::new(src);
         let mut tokens = Vec::new();
@@ -444,8 +303,8 @@ pub enum Error {
     #[error("invalid boolean: {0}")]
     InvalidBool(String),
 
-    #[error("invalid operator: {0}")]
-    InvalidOperator(String),
+    #[error("invalid keyword: {0}")]
+    InvalidKeyword(String),
 
     #[error("Unsupported Character `{0}`")]
     UnsupportedCharacter(u8),
@@ -567,47 +426,47 @@ mod tests {
     lex_test!(
         FAIL: parse_bad_or,
         " OR",
-        Error::InvalidOperator("OR".to_string())
+        Error::InvalidKeyword("OR".to_string())
     );
 
     lex_test!(parse_in, " IN ", Token::In);
     lex_test!(
         FAIL: parse_bad_in,
         " IN",
-        Error::InvalidOperator("IN".to_string())
+        Error::InvalidKeyword("IN".to_string())
     );
 
     lex_test!(parse_contains, " CONTAINS ", Token::Contains);
     lex_test!(
         FAIL: contains,
         " CONTAINS",
-        Error::InvalidOperator("CONTAINS".to_string())
+        Error::InvalidKeyword("CONTAINS".to_string())
     );
 
     lex_test!(parse_starts_with, " STARTSWITH ", Token::StartsWith);
     lex_test!(
         FAIL: parse_bad_starts_with,
         " STARTSWITH",
-        Error::InvalidOperator("STARTSWITH".to_string())
+        Error::InvalidKeyword("STARTSWITH".to_string())
     );
 
     lex_test!(parse_ends_with, " ENDSWITH ", Token::EndsWith);
     lex_test!(
         FAIL: parse_bad_ends_with,
         " ENDSWITH",
-        Error::InvalidOperator("ENDSWITH".to_string())
+        Error::InvalidKeyword("ENDSWITH".to_string())
     );
 
     lex_test!(parse_null, "NULL", Token::Null);
     lex_test!(
         FAIL: parse_bad_null,
         "NULLL",
-        Error::InvalidOperator("NULLL".to_string())
+        Error::InvalidKeyword("NULLL".to_string())
     );
     lex_test!(parse_and, " AND ", Token::And);
     lex_test!(
         FAIL: parse_bad_and,
         " AND",
-        Error::InvalidOperator("AND".to_string())
+        Error::InvalidKeyword("AND".to_string())
     );
 }

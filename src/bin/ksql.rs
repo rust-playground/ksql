@@ -27,5 +27,5 @@ fn main() -> anyhow::Result<()> {
 fn usage() {
     println!("ksql <expression> <json>");
     println!("or");
-    println!("echo '{{}}' | ksql <expression> -")
+    println!("echo '{{}}' | ksql <expression> -");
 }
