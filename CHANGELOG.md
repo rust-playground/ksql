@@ -6,9 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.2.0] - 2022-03-19
-### Fixed
-- Cleanup code.
+## [0.2.0] - 2022-03-20
+### Changed
+- Cleaned up code.
+- AND->&& and OR->|| in lexer.
+- Expression signature to accept &[u8] instead of &str
+- Temporarily using fork of gjson that supports parsing using &[u8].
+
+### Added
+- Not token type and support in lexer + parser.
 
 ## [0.1.2] - 2022-03-14
 ### Fixed
