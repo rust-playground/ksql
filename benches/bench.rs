@@ -45,6 +45,11 @@ fn criterion_benchmark(c: &mut Criterion) {
             r#"{"name":"Company","properties":{"employees":50}}"#.as_bytes(),
             ".properties.employees > 20",
         ),
+        (
+            "not_paren_not",
+            r#"{"f1":true,"f2":false}"#.as_bytes(),
+            "!(.f1 != .f2)",
+        ),
     ]
     .iter()
     {

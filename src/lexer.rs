@@ -18,6 +18,7 @@ pub enum Token {
     Gte,
     Lt,
     Lte,
+    Not,
     And,
     Or,
     Contains,
@@ -53,6 +54,7 @@ fn tokenize_single_token(data: &[u8]) -> Result<(Token, usize)> {
         b'[' => (Token::OpenBracket, 1),
         b']' => (Token::CloseBracket, 1),
         b',' => (Token::Comma, 1),
+        b'!' => (Token::Not, 1),
         b'"' | b'\'' => tokenize_string(data, *b)?,
         b'.' => tokenize_identifier(data)?,
         b't' | b'f' => tokenize_bool(data)?,
@@ -94,7 +96,9 @@ fn tokenize_null(data: &[u8]) -> Result<(Token, usize)> {
 
 #[inline]
 fn tokenize_identifier(data: &[u8]) -> Result<(Token, usize)> {
-    match take_while(&data[1..], |c| !c.is_ascii_whitespace()) {
+    match take_while(&data[1..], |c| {
+        !c.is_ascii_whitespace() && c != b')' && c != b']'
+    }) {
         Some(mut end) => {
             if data.len() > end {
                 end += 1;
@@ -469,4 +473,5 @@ mod tests {
         " AND",
         Error::InvalidKeyword("AND".to_string())
     );
+    lex_test!(parse_not, "!", Token::Not);
 }

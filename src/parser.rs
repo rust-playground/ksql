@@ -113,6 +113,11 @@ fn parse_value(tokens: &[Token], pos: &mut usize) -> anyhow::Result<Option<Boxed
         Some(Token::Number(n)) => parse_op(Box::new(Num { n: *n }), tokens, pos),
         Some(Token::Boolean(b)) => parse_op(Box::new(Bool { b: *b }), tokens, pos),
         Some(Token::Null) => parse_op(Box::new(Null {}), tokens, pos),
+        Some(Token::Not) => {
+            let v = parse_value(tokens, pos)?
+                .map_or_else(|| Err(anyhow!("no identifier after !")), Ok)?;
+            parse_op(Box::new(Not { value: v }), tokens, pos)
+        }
         Some(Token::OpenBracket) => {
             let mut arr = Vec::new();
 
@@ -219,6 +224,16 @@ fn parse_op(
             let right =
                 parse_value(tokens, pos)?.map_or_else(|| Err(anyhow!("no value after /")), Ok)?;
             Ok(Some(Box::new(Div { left: value, right })))
+        }
+        Some(Token::Not) => {
+            let op = parse_op(value, tokens, pos)
+                .map_or_else(|_| Err(anyhow!("invalid operation after !")), Ok)?;
+            if let Some(value) = op {
+                let n = Not { value };
+                Ok(Some(Box::new(n)))
+            } else {
+                Err(anyhow!("no operator after !"))
+            }
         }
         Some(Token::OpenParen) => {
             let op =
@@ -413,6 +428,21 @@ impl Expression for Lte {
                 "{:?} <= {:?}",
                 l, r
             ))),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct Not {
+    value: BoxedExpression,
+}
+
+impl Expression for Not {
+    fn calculate(&self, src: &[u8]) -> Result<Value> {
+        let v = self.value.calculate(src)?;
+        match v {
+            Value::Bool(b) => Ok(Value::Bool(!b)),
+            v => Err(Error::UnsupportedTypeComparison(format!("{:?} for !", v))),
         }
     }
 }
@@ -913,6 +943,61 @@ mod tests {
         let ex = Parser::parse(expression)?;
         let result = ex.calculate(src)?;
         assert_eq!(Value::Bool(false), result);
+        Ok(())
+    }
+
+    #[test]
+    fn company_not_employees() -> anyhow::Result<()> {
+        let src = r#"{"name":"Company","properties":{"employees":50}}"#.as_bytes();
+        let expression = ".properties.employees !> 20";
+        let ex = Parser::parse(expression.as_bytes())?;
+        let result = ex.calculate(src)?;
+        assert_eq!(Value::Bool(false), result);
+
+        let expression = ".properties.employees !> 50".as_bytes();
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate(src)?;
+        assert_eq!(Value::Bool(true), result);
+
+        let expression = ".properties.employees != 50".as_bytes();
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate(src)?;
+        assert_eq!(Value::Bool(false), result);
+        Ok(())
+    }
+
+    #[test]
+    fn company_not() -> anyhow::Result<()> {
+        let src = r#"{"f1":true,"f2":false}"#.as_bytes();
+        let expression = "!.f1";
+        let ex = Parser::parse(expression.as_bytes())?;
+        let result = ex.calculate(src)?;
+        assert_eq!(Value::Bool(false), result);
+
+        let src = r#"{"f1":true,"f2":false}"#.as_bytes();
+        let expression = "!.f2";
+        let ex = Parser::parse(expression.as_bytes())?;
+        let result = ex.calculate(src)?;
+        assert_eq!(Value::Bool(true), result);
+
+        let src = r#"{"f1":true,"f2":false}"#.as_bytes();
+        let expression = "!(.f1 AND .f2)";
+        let ex = Parser::parse(expression.as_bytes())?;
+        let result = ex.calculate(src)?;
+        assert_eq!(Value::Bool(true), result);
+
+        let src = r#"{"f1":true,"f2":false}"#.as_bytes();
+        let expression = "!(.f1 != .f2)";
+        let ex = Parser::parse(expression.as_bytes())?;
+        let result = ex.calculate(src)?;
+        assert_eq!(Value::Bool(false), result);
+
+        let src = r#"{"f1":true,"f2":false}"#.as_bytes();
+        let expression = "!(.f1 != .f2) AND !.f2";
+        let ex = Parser::parse(expression.as_bytes())?;
+        let result = ex.calculate(src)?;
+        assert_eq!(Value::Bool(false), result);
+
         Ok(())
     }
 }
