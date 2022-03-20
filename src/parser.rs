@@ -799,15 +799,15 @@ mod tests {
 
     #[test]
     fn or() -> anyhow::Result<()> {
-        let ex = Parser::parse("true OR false".as_bytes())?;
+        let ex = Parser::parse("true || false".as_bytes())?;
         let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(true), result);
 
-        let ex = Parser::parse("false OR true".as_bytes())?;
+        let ex = Parser::parse("false || true".as_bytes())?;
         let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(true), result);
 
-        let ex = Parser::parse("false OR false".as_bytes())?;
+        let ex = Parser::parse("false || false".as_bytes())?;
         let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(false), result);
         Ok(())
@@ -815,19 +815,19 @@ mod tests {
 
     #[test]
     fn and() -> anyhow::Result<()> {
-        let ex = Parser::parse("true AND true".as_bytes())?;
+        let ex = Parser::parse("true && true".as_bytes())?;
         let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(true), result);
 
-        let ex = Parser::parse("false AND false".as_bytes())?;
+        let ex = Parser::parse("false && false".as_bytes())?;
         let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(false), result);
 
-        let ex = Parser::parse("true AND false".as_bytes())?;
+        let ex = Parser::parse("true && false".as_bytes())?;
         let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(false), result);
 
-        let ex = Parser::parse("false AND true".as_bytes())?;
+        let ex = Parser::parse("false && true".as_bytes())?;
         let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(false), result);
         Ok(())
@@ -981,7 +981,7 @@ mod tests {
         assert_eq!(Value::Bool(true), result);
 
         let src = r#"{"f1":true,"f2":false}"#.as_bytes();
-        let expression = "!(.f1 AND .f2)";
+        let expression = "!(.f1 && .f2)";
         let ex = Parser::parse(expression.as_bytes())?;
         let result = ex.calculate(src)?;
         assert_eq!(Value::Bool(true), result);
@@ -993,7 +993,7 @@ mod tests {
         assert_eq!(Value::Bool(false), result);
 
         let src = r#"{"f1":true,"f2":false}"#.as_bytes();
-        let expression = "!(.f1 != .f2) AND !.f2";
+        let expression = "!(.f1 != .f2) && !.f2";
         let ex = Parser::parse(expression.as_bytes())?;
         let result = ex.calculate(src)?;
         assert_eq!(Value::Bool(false), result);

@@ -58,7 +58,8 @@ fn tokenize_single_token(data: &[u8]) -> Result<(Token, usize)> {
         b'"' | b'\'' => tokenize_string(data, *b)?,
         b'.' => tokenize_identifier(data)?,
         b't' | b'f' => tokenize_bool(data)?,
-        b'A' => tokenize_keyword(data, "AND", Token::And)?,
+        b'&' if data.get(1) == Some(&b'&') => (Token::And, 2),
+        b'|' if data.get(1) == Some(&b'|') => (Token::Or, 2),
         b'O' => tokenize_keyword(data, "OR", Token::Or)?,
         b'C' => tokenize_keyword(data, "CONTAINS", Token::Contains)?,
         b'I' => tokenize_keyword(data, "IN", Token::In)?,
@@ -426,12 +427,8 @@ mod tests {
         Token::CloseParen
     );
 
-    lex_test!(parse_or, " OR ", Token::Or);
-    lex_test!(
-        FAIL: parse_bad_or,
-        " OR",
-        Error::InvalidKeyword("OR".to_string())
-    );
+    lex_test!(parse_or, "||", Token::Or);
+    lex_test!(FAIL: parse_bad_or, "|", Error::UnsupportedCharacter(b'|'));
 
     lex_test!(parse_in, " IN ", Token::In);
     lex_test!(
@@ -467,11 +464,7 @@ mod tests {
         "NULLL",
         Error::InvalidKeyword("NULLL".to_string())
     );
-    lex_test!(parse_and, " AND ", Token::And);
-    lex_test!(
-        FAIL: parse_bad_and,
-        " AND",
-        Error::InvalidKeyword("AND".to_string())
-    );
+    lex_test!(parse_and, "&&", Token::And);
+    lex_test!(FAIL: parse_bad_and, "&", Error::UnsupportedCharacter(b'&'));
     lex_test!(parse_not, "!", Token::Not);
 }
