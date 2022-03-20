@@ -17,7 +17,8 @@ keywords = [
 
 [dependencies]
 anyhow = "1.0.56"
-gjson = "0.8.0"
+#gjson = { version = "0.8.0" }
+gjson = { version = "0.8.0", path = "../gjson.rs" }
 thiserror = "1.0.30"
 
 [dev-dependencies]

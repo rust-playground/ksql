@@ -78,7 +78,7 @@ pub trait Expression: Debug {
     ///
     /// Will return `Err` if the expression cannot be applied to the supplied data due to invalid
     /// data type comparisons.
-    fn calculate(&self, src: &str) -> Result<Value>;
+    fn calculate(&self, src: &[u8]) -> Result<Value>;
 }
 
 type BoxedExpression = Box<dyn Expression>;
@@ -237,7 +237,7 @@ struct Add {
 }
 
 impl Expression for Add {
-    fn calculate(&self, src: &str) -> Result<Value> {
+    fn calculate(&self, src: &[u8]) -> Result<Value> {
         let left = self.left.calculate(src)?;
         let right = self.right.calculate(src)?;
 
@@ -259,7 +259,7 @@ struct Sub {
 }
 
 impl Expression for Sub {
-    fn calculate(&self, src: &str) -> Result<Value> {
+    fn calculate(&self, src: &[u8]) -> Result<Value> {
         let left = self.left.calculate(src)?;
         let right = self.right.calculate(src)?;
 
@@ -280,7 +280,7 @@ struct Mult {
 }
 
 impl Expression for Mult {
-    fn calculate(&self, src: &str) -> Result<Value> {
+    fn calculate(&self, src: &[u8]) -> Result<Value> {
         let left = self.left.calculate(src)?;
         let right = self.right.calculate(src)?;
 
@@ -301,7 +301,7 @@ struct Div {
 }
 
 impl Expression for Div {
-    fn calculate(&self, src: &str) -> Result<Value> {
+    fn calculate(&self, src: &[u8]) -> Result<Value> {
         let left = self.left.calculate(src)?;
         let right = self.right.calculate(src)?;
 
@@ -322,7 +322,7 @@ struct Eq {
 }
 
 impl Expression for Eq {
-    fn calculate(&self, src: &str) -> Result<Value> {
+    fn calculate(&self, src: &[u8]) -> Result<Value> {
         let left = self.left.calculate(src)?;
         let right = self.right.calculate(src)?;
         Ok(Value::Bool(left == right))
@@ -336,7 +336,7 @@ struct Gt {
 }
 
 impl Expression for Gt {
-    fn calculate(&self, src: &str) -> Result<Value> {
+    fn calculate(&self, src: &[u8]) -> Result<Value> {
         let left = self.left.calculate(src)?;
         let right = self.right.calculate(src)?;
 
@@ -358,7 +358,7 @@ struct Gte {
 }
 
 impl Expression for Gte {
-    fn calculate(&self, src: &str) -> Result<Value> {
+    fn calculate(&self, src: &[u8]) -> Result<Value> {
         let left = self.left.calculate(src)?;
         let right = self.right.calculate(src)?;
 
@@ -380,7 +380,7 @@ struct Lt {
 }
 
 impl Expression for Lt {
-    fn calculate(&self, src: &str) -> Result<Value> {
+    fn calculate(&self, src: &[u8]) -> Result<Value> {
         let left = self.left.calculate(src)?;
         let right = self.right.calculate(src)?;
 
@@ -402,7 +402,7 @@ struct Lte {
 }
 
 impl Expression for Lte {
-    fn calculate(&self, src: &str) -> Result<Value> {
+    fn calculate(&self, src: &[u8]) -> Result<Value> {
         let left = self.left.calculate(src)?;
         let right = self.right.calculate(src)?;
 
@@ -423,8 +423,8 @@ struct Ident {
 }
 
 impl Expression for Ident {
-    fn calculate(&self, src: &str) -> Result<Value> {
-        Ok(gjson::get(src, &self.ident).into())
+    fn calculate(&self, src: &[u8]) -> Result<Value> {
+        Ok(gjson::get_bytes(src, &self.ident).into())
     }
 }
 
@@ -434,7 +434,7 @@ struct Str {
 }
 
 impl Expression for Str {
-    fn calculate(&self, _: &str) -> Result<Value> {
+    fn calculate(&self, _: &[u8]) -> Result<Value> {
         Ok(Value::String(self.s.clone()))
     }
 }
@@ -445,7 +445,7 @@ struct Num {
 }
 
 impl Expression for Num {
-    fn calculate(&self, _: &str) -> Result<Value> {
+    fn calculate(&self, _: &[u8]) -> Result<Value> {
         Ok(Value::Number(self.n))
     }
 }
@@ -456,7 +456,7 @@ struct Bool {
 }
 
 impl Expression for Bool {
-    fn calculate(&self, _: &str) -> Result<Value> {
+    fn calculate(&self, _: &[u8]) -> Result<Value> {
         Ok(Value::Bool(self.b))
     }
 }
@@ -465,7 +465,7 @@ impl Expression for Bool {
 struct Null;
 
 impl Expression for Null {
-    fn calculate(&self, _: &str) -> Result<Value> {
+    fn calculate(&self, _: &[u8]) -> Result<Value> {
         Ok(Value::Null)
     }
 }
@@ -477,7 +477,7 @@ struct Or {
 }
 
 impl Expression for Or {
-    fn calculate(&self, src: &str) -> Result<Value> {
+    fn calculate(&self, src: &[u8]) -> Result<Value> {
         let left = self.left.calculate(src)?;
         let right = self.right.calculate(src)?;
 
@@ -498,7 +498,7 @@ struct And {
 }
 
 impl Expression for And {
-    fn calculate(&self, src: &str) -> Result<Value> {
+    fn calculate(&self, src: &[u8]) -> Result<Value> {
         let left = self.left.calculate(src)?;
         let right = self.right.calculate(src)?;
 
@@ -519,7 +519,7 @@ struct Contains {
 }
 
 impl Expression for Contains {
-    fn calculate(&self, src: &str) -> Result<Value> {
+    fn calculate(&self, src: &[u8]) -> Result<Value> {
         let left = self.left.calculate(src)?;
         let right = self.right.calculate(src)?;
         match (left, right) {
@@ -539,7 +539,7 @@ struct StartsWith {
 }
 
 impl Expression for StartsWith {
-    fn calculate(&self, src: &str) -> Result<Value> {
+    fn calculate(&self, src: &[u8]) -> Result<Value> {
         let left = self.left.calculate(src)?;
         let right = self.right.calculate(src)?;
 
@@ -560,7 +560,7 @@ struct EndsWith {
 }
 
 impl Expression for EndsWith {
-    fn calculate(&self, src: &str) -> Result<Value> {
+    fn calculate(&self, src: &[u8]) -> Result<Value> {
         let left = self.left.calculate(src)?;
         let right = self.right.calculate(src)?;
 
@@ -581,7 +581,7 @@ struct In {
 }
 
 impl Expression for In {
-    fn calculate(&self, src: &str) -> Result<Value> {
+    fn calculate(&self, src: &[u8]) -> Result<Value> {
         let left = self.left.calculate(src)?;
         let right = self.right.calculate(src)?;
 
@@ -601,7 +601,7 @@ struct Arr {
 }
 
 impl Expression for Arr {
-    fn calculate(&self, src: &str) -> Result<Value> {
+    fn calculate(&self, src: &[u8]) -> Result<Value> {
         let mut arr = Vec::new();
         for e in &self.arr {
             arr.push(e.calculate(src)?);
@@ -746,7 +746,7 @@ mod tests {
     #[test]
     fn bool_true() -> anyhow::Result<()> {
         let ex = Parser::parse("true = true".as_bytes())?;
-        let result = ex.calculate("")?;
+        let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(true), result);
         Ok(())
     }
@@ -754,7 +754,7 @@ mod tests {
     #[test]
     fn bool_false() -> anyhow::Result<()> {
         let ex = Parser::parse("false = true".as_bytes())?;
-        let result = ex.calculate("")?;
+        let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(false), result);
         Ok(())
     }
@@ -762,7 +762,7 @@ mod tests {
     #[test]
     fn null_eq() -> anyhow::Result<()> {
         let ex = Parser::parse("NULL = NULL".as_bytes())?;
-        let result = ex.calculate("")?;
+        let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(true), result);
         Ok(())
     }
@@ -770,15 +770,15 @@ mod tests {
     #[test]
     fn or() -> anyhow::Result<()> {
         let ex = Parser::parse("true OR false".as_bytes())?;
-        let result = ex.calculate("")?;
+        let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(true), result);
 
         let ex = Parser::parse("false OR true".as_bytes())?;
-        let result = ex.calculate("")?;
+        let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(true), result);
 
         let ex = Parser::parse("false OR false".as_bytes())?;
-        let result = ex.calculate("")?;
+        let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(false), result);
         Ok(())
     }
@@ -786,19 +786,19 @@ mod tests {
     #[test]
     fn and() -> anyhow::Result<()> {
         let ex = Parser::parse("true AND true".as_bytes())?;
-        let result = ex.calculate("")?;
+        let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(true), result);
 
         let ex = Parser::parse("false AND false".as_bytes())?;
-        let result = ex.calculate("")?;
+        let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(false), result);
 
         let ex = Parser::parse("true AND false".as_bytes())?;
-        let result = ex.calculate("")?;
+        let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(false), result);
 
         let ex = Parser::parse("false AND true".as_bytes())?;
-        let result = ex.calculate("")?;
+        let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(false), result);
         Ok(())
     }
@@ -806,11 +806,11 @@ mod tests {
     #[test]
     fn contains() -> anyhow::Result<()> {
         let ex = Parser::parse(r#""team" CONTAINS "i""#.as_bytes())?;
-        let result = ex.calculate("")?;
+        let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(false), result);
 
         let ex = Parser::parse(r#""team" CONTAINS "ea""#.as_bytes())?;
-        let result = ex.calculate("")?;
+        let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(true), result);
         Ok(())
     }
@@ -818,11 +818,11 @@ mod tests {
     #[test]
     fn starts_with() -> anyhow::Result<()> {
         let ex = Parser::parse(r#""team" STARTSWITH "i""#.as_bytes())?;
-        let result = ex.calculate("")?;
+        let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(false), result);
 
         let ex = Parser::parse(r#""team" STARTSWITH "te""#.as_bytes())?;
-        let result = ex.calculate("")?;
+        let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(true), result);
         Ok(())
     }
@@ -830,25 +830,25 @@ mod tests {
     #[test]
     fn ends_with() -> anyhow::Result<()> {
         let ex = Parser::parse(r#""team" ENDSWITH "i""#.as_bytes())?;
-        let result = ex.calculate("")?;
+        let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(false), result);
 
         let ex = Parser::parse(r#""team" ENDSWITH "am""#.as_bytes())?;
-        let result = ex.calculate("")?;
+        let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(true), result);
         Ok(())
     }
 
     #[test]
     fn inn() -> anyhow::Result<()> {
-        let src = r#"{"field1":["test"]}"#;
+        let src = r#"{"field1":["test"]}"#.as_bytes();
         let expression = r#""test" IN .field1"#;
 
         let ex = Parser::parse(expression.as_bytes())?;
         let result = ex.calculate(src)?;
         assert_eq!(Value::Bool(true), result);
 
-        let src = r#"{"field1":["test"]}"#;
+        let src = r#"{"field1":["test"]}"#.as_bytes();
         let expression = r#""me" IN .field1"#;
 
         let ex = Parser::parse(expression.as_bytes())?;
@@ -861,27 +861,27 @@ mod tests {
     fn inn_arr() -> anyhow::Result<()> {
         let expression = r#""me" IN ["me"]"#;
         let ex = Parser::parse(expression.as_bytes())?;
-        let result = ex.calculate("")?;
+        let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(true), result);
 
         let expression = r#""me" IN ["z"]"#;
         let ex = Parser::parse(expression.as_bytes())?;
-        let result = ex.calculate("")?;
+        let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(false), result);
 
         let expression = r#""me" IN []"#;
         let ex = Parser::parse(expression.as_bytes())?;
-        let result = ex.calculate("")?;
+        let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(false), result);
 
         let expression = r#"[] = []"#;
         let ex = Parser::parse(expression.as_bytes())?;
-        let result = ex.calculate("")?;
+        let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(true), result);
 
         let expression = r#"[] = ["test"]"#;
         let ex = Parser::parse(expression.as_bytes())?;
-        let result = ex.calculate("")?;
+        let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(false), result);
 
         Ok(())
@@ -891,26 +891,26 @@ mod tests {
     fn ampersand() -> anyhow::Result<()> {
         let expression = "(1 + 1) / 2";
         let ex = Parser::parse(expression.as_bytes())?;
-        let result = ex.calculate("")?;
+        let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Number(1.0), result);
 
         let expression = "1 + 1 / 2";
         let ex = Parser::parse(expression.as_bytes())?;
-        let result = ex.calculate("")?;
+        let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Number(1.5), result);
         Ok(())
     }
 
     #[test]
     fn company_employees() -> anyhow::Result<()> {
-        let src = r#"{"name":"Company","properties":{"employees":50}}"#;
+        let src = r#"{"name":"Company","properties":{"employees":50}}"#.as_bytes();
         let expression = ".properties.employees > 20";
         let ex = Parser::parse(expression.as_bytes())?;
         let result = ex.calculate(src)?;
         assert_eq!(Value::Bool(true), result);
 
-        let expression = ".properties.employees > 50";
-        let ex = Parser::parse(expression.as_bytes())?;
+        let expression = ".properties.employees > 50".as_bytes();
+        let ex = Parser::parse(expression)?;
         let result = ex.calculate(src)?;
         assert_eq!(Value::Bool(false), result);
         Ok(())

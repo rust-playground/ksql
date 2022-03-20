@@ -20,7 +20,7 @@ fn main() -> anyhow::Result<()> {
 
     let ex = Parser::parse(args[1].as_bytes())?;
 
-    println!("{}", ex.calculate(&s)?);
+    println!("{}", ex.calculate(s.as_bytes())?);
     Ok(())
 }
 

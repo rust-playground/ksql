@@ -7,16 +7,16 @@ use ksql::parser::Parser;
 fn criterion_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("add");
     for (name, src, expression) in [
-        ("num_num", "", "1 + 1"),
-        ("ident_num", r#"{"field1":1}"#, ".field + 1"),
+        ("num_num", "".as_bytes(), "1 + 1"),
+        ("ident_num", r#"{"field1":1}"#.as_bytes(), ".field + 1"),
         (
             "ident_ident",
-            r#"{"field1":1,"field2":1}"#,
+            r#"{"field1":1,"field2":1}"#.as_bytes(),
             ".field + .field2",
         ),
         (
             "fname_lname",
-            r#"{"first_name":"Joey","last_name":"Bloggs"}"#,
+            r#"{"first_name":"Joey","last_name":"Bloggs"}"#.as_bytes(),
             r#".first_name + " " + .last_name"#,
         ),
     ]
@@ -34,15 +34,15 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("complex");
     for (name, src, expression) in [
-        ("paren_div", "", "(1 + 1) / 2"),
+        ("paren_div", "".as_bytes(), "(1 + 1) / 2"),
         (
             "paren_div_idents",
-            r#"{"field1":1,"field2":1,"field3":2}"#,
+            r#"{"field1":1,"field2":1,"field3":2}"#.as_bytes(),
             "(.field1 + .field2) / .field3",
         ),
         (
             "company_employees",
-            r#"{"name":"Company","properties":{"employees":50}}"#,
+            r#"{"name":"Company","properties":{"employees":50}}"#.as_bytes(),
             ".properties.employees > 20",
         ),
     ]
