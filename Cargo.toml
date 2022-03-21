@@ -17,7 +17,7 @@ keywords = [
 
 [dependencies]
 anyhow = "1.0.56"
-gjson = { git = "https://github.com/deankarn/gjson.rs", branch = "support-bytes" }
+gjson = { version = "*", git = "https://github.com/deankarn/gjson.rs", branch = "support-bytes" }
 thiserror = "1.0.30"
 
 [dev-dependencies]
