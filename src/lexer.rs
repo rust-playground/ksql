@@ -206,7 +206,7 @@ fn tokenize_string(data: &[u8], quote: u8) -> Result<(Token, usize)> {
             } else {
                 Ok((
                     Token::String(String::from_utf8_lossy(&data[..0]).to_string()),
-                    1,
+                    2,
                 ))
             }
         }

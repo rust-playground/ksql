@@ -129,14 +129,14 @@ fn parse_value(tokens: &[Token], pos: &mut usize) -> anyhow::Result<Option<Boxed
         }
         Some(Token::Comma) => match parse_value(tokens, pos)? {
             Some(v) => Ok(Some(v)),
-            None => Err(anyhow!(" value required after comma: {:?}", tok)),
+            None => Err(anyhow!("value required after comma: {:?}", tok)),
         },
         Some(Token::OpenParen) => {
-            let op =
-                parse_value(tokens, pos)?.map_or_else(|| Err(anyhow!("no value between (")), Ok)?;
+            let op = parse_value(tokens, pos)?
+                .map_or_else(|| Err(anyhow!("no value between ()")), Ok)?;
             parse_op(op, tokens, pos)
         }
-        Some(Token::CloseParen) => Err(anyhow!("no value between (")),
+        Some(Token::CloseParen) => Err(anyhow!("no value between ()")),
         Some(Token::CloseBracket) | None => Ok(None),
         _ => Err(anyhow!("invalid value: {:?}", tok)),
     }
@@ -202,7 +202,7 @@ fn parse_op(
         }
         Some(Token::Equals) => {
             let right =
-                parse_value(tokens, pos)?.map_or_else(|| Err(anyhow!("no value after =")), Ok)?;
+                parse_value(tokens, pos)?.map_or_else(|| Err(anyhow!("no value after ==")), Ok)?;
             Ok(Some(Box::new(Eq { left: value, right })))
         }
         Some(Token::Add) => {
@@ -236,8 +236,8 @@ fn parse_op(
             }
         }
         Some(Token::OpenParen) => {
-            let op =
-                parse_value(tokens, pos)?.map_or_else(|| Err(anyhow!("no value between (")), Ok)?;
+            let op = parse_value(tokens, pos)?
+                .map_or_else(|| Err(anyhow!("no value between ()")), Ok)?;
             parse_op(op, tokens, pos)
         }
         Some(Token::CloseBracket | Token::CloseParen) | None => Ok(Some(value)),
@@ -514,7 +514,7 @@ impl Expression for Or {
         match (left, right) {
             (Value::Bool(b1), Value::Bool(b2)) => Ok(Value::Bool(b1 || b2)),
             (l, r) => Err(Error::UnsupportedTypeComparison(format!(
-                "{:?} OR {:?}",
+                "{:?} || {:?}",
                 l, r
             ))),
         }
@@ -535,7 +535,7 @@ impl Expression for And {
         match (left, right) {
             (Value::Bool(b1), Value::Bool(b2)) => Ok(Value::Bool(b1 && b2)),
             (l, r) => Err(Error::UnsupportedTypeComparison(format!(
-                "{:?} AND {:?}",
+                "{:?} && {:?}",
                 l, r
             ))),
         }
