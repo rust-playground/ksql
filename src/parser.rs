@@ -732,7 +732,7 @@ mod tests {
     #[test]
     fn ident_eq_num_false() -> anyhow::Result<()> {
         let src = r#"{"field1":3,"field2":33.3}"#;
-        let expression = r#"11.1 = .field1"#;
+        let expression = r#"11.1 == .field1"#;
 
         let ex = Parser::parse(expression.as_bytes())?;
         let result = ex.calculate(src.as_ref())?;
@@ -743,7 +743,7 @@ mod tests {
     #[test]
     fn ident_eq_num_true() -> anyhow::Result<()> {
         let src = r#"{"field1":11.1,"field2":33.3}"#;
-        let expression = r#"11.1 = .field1"#;
+        let expression = r#"11.1 == .field1"#;
 
         let ex = Parser::parse(expression.as_bytes())?;
         let result = ex.calculate(src.as_ref())?;
@@ -775,7 +775,7 @@ mod tests {
 
     #[test]
     fn bool_true() -> anyhow::Result<()> {
-        let ex = Parser::parse("true = true".as_bytes())?;
+        let ex = Parser::parse("true == true".as_bytes())?;
         let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(true), result);
         Ok(())
@@ -783,7 +783,7 @@ mod tests {
 
     #[test]
     fn bool_false() -> anyhow::Result<()> {
-        let ex = Parser::parse("false = true".as_bytes())?;
+        let ex = Parser::parse("false == true".as_bytes())?;
         let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(false), result);
         Ok(())
@@ -791,7 +791,7 @@ mod tests {
 
     #[test]
     fn null_eq() -> anyhow::Result<()> {
-        let ex = Parser::parse("NULL = NULL".as_bytes())?;
+        let ex = Parser::parse("NULL == NULL".as_bytes())?;
         let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(true), result);
         Ok(())
@@ -904,12 +904,12 @@ mod tests {
         let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(false), result);
 
-        let expression = r#"[] = []"#;
+        let expression = r#"[] == []"#;
         let ex = Parser::parse(expression.as_bytes())?;
         let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(true), result);
 
-        let expression = r#"[] = ["test"]"#;
+        let expression = r#"[] == ["test"]"#;
         let ex = Parser::parse(expression.as_bytes())?;
         let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(false), result);

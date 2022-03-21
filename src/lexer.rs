@@ -40,6 +40,7 @@ fn tokenize_single_token(data: &[u8]) -> Result<(Token, usize)> {
     };
 
     let (token, end) = match b {
+        b'=' if data.get(1) == Some(&b'=') => (Token::Equals, 2),
         b'=' => (Token::Equals, 1),
         b'+' => (Token::Add, 1),
         b'-' => (Token::Subtract, 1),
@@ -385,7 +386,7 @@ mod tests {
         r#"""#,
         Error::UnterminatedString(r#"""#.to_string())
     );
-    lex_test!(parse_equals, "=", Token::Equals);
+    lex_test!(parse_equals, "==", Token::Equals);
     lex_test!(parse_add, "+", Token::Add);
     lex_test!(parse_subtracts, "-", Token::Subtract);
     lex_test!(parse_multiple, "*", Token::Multiply);
