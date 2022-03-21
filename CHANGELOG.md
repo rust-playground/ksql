@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Not token type and support in lexer + parser.
 
+### Fixed
+- Identifier parsing when it ends in a parenthesis or bracket.
+
 ## [0.1.2] - 2022-03-14
 ### Fixed
 - Fixed README + leftover docs.
