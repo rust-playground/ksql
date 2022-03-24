@@ -8,7 +8,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("add");
     for (name, src, expression) in [
         ("num_num", "".as_bytes(), "1 + 1"),
-        ("ident_num", r#"{"field1":1}"#.as_bytes(), ".field + 1"),
+        ("ident_num", r#"{"field1":1}"#.as_bytes(), ".field1 + 1"),
         (
             "ident_ident",
             r#"{"field1":1,"field2":1}"#.as_bytes(),
