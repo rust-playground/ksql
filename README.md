@@ -25,6 +25,13 @@ fn main() -> Result<(), Box<dyn Error>>{
 }
 ```
 
+#### CLI Usage
+```shell
+~ ksql '(.field1 + 1) /2' '{"field1": 1}'
+or
+echo '{"field1": 1}' | ksql '(.field1 + 1) /2'
+```
+
 #### Expressions
 Expressions support most mathematical and string expressions see below for details:
 
