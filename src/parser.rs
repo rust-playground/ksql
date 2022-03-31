@@ -258,6 +258,8 @@ impl Expression for Add {
 
         match (left, right) {
             (Value::String(s1), Value::String(ref s2)) => Ok(Value::String(s1 + s2)),
+            (Value::String(s1), Value::Null) => Ok(Value::String(s1)),
+            (Value::Null, Value::String(s2)) => Ok(Value::String(s2)),
             (Value::Number(n1), Value::Number(n2)) => Ok(Value::Number(n1 + n2)),
             (l, r) => Err(Error::UnsupportedTypeComparison(format!(
                 "{:?} + {:?}",
