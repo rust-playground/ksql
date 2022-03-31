@@ -1,32 +1,45 @@
+use clap::Parser as ClapParser;
 use ksql::parser::Parser;
 use std::env;
-use std::io::{stdin, Read};
+use std::io::{stdin, BufRead};
 
-fn main() -> anyhow::Result<()> {
-    let is_pipe = !atty::is(atty::Stream::Stdin);
-    let args: Vec<String> = env::args().collect();
-    if (args.len() < 2 && !is_pipe) || (args.is_empty() && is_pipe) {
-        usage();
-        return Ok(());
-    }
+#[derive(Debug, ClapParser)]
+#[clap(version = env!("CARGO_PKG_VERSION"), author = env!("CARGO_PKG_AUTHORS"), about = env!("CARGO_PKG_DESCRIPTION"))]
+pub struct Opts {
+    /// ksql expression to apply to input.
+    #[clap()]
+    pub expression: String,
 
-    let ex = Parser::parse(args[1].as_bytes())?;
-
-    let mut s;
-    if is_pipe {
-        s = String::new();
-        let mut reader = stdin();
-        reader.read_to_string(&mut s)?;
-    } else {
-        s = args[2].clone();
-    }
-
-    println!("{}", ex.calculate(s.as_bytes())?);
-    Ok(())
+    /// JSON data to apply expression against or piped from STDIN
+    #[clap()]
+    pub data: Option<String>,
 }
 
-fn usage() {
-    println!("ksql <expression> <json>");
-    println!("or");
-    println!("echo '{{}}' | ksql <expression>");
+fn main() -> anyhow::Result<()> {
+    let opts: Opts = Opts::parse();
+
+    let is_pipe = !atty::is(atty::Stream::Stdin);
+
+    let ex = Parser::parse(opts.expression.as_bytes())?;
+
+    if is_pipe {
+        let stdin = stdin();
+        let mut stdin = stdin.lock(); // locking is optional
+
+        let mut line = String::new();
+
+        while stdin.read_line(&mut line)? > 0 {
+            println!("{}", ex.calculate(line.as_bytes())?);
+            line.clear();
+        }
+        Ok(())
+    } else {
+        match opts.data {
+            None => Err(anyhow::anyhow!("No data provided")),
+            Some(ref data) => {
+                println!("{}", ex.calculate(data.as_bytes())?);
+                Ok(())
+            }
+        }
+    }
 }

@@ -18,6 +18,7 @@ keywords = [
 [dependencies]
 anyhow = "1.0.56"
 atty = "0.2.14"
+clap = { version = "3.1.6", features = ["derive"] }
 gjson = { version = "0.8.0", git = "https://github.com/deankarn/gjson.rs", branch = "support-bytes" }
 thiserror = "1.0.30"
 
