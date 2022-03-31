@@ -26,11 +26,11 @@ fn main() -> anyhow::Result<()> {
         let stdin = stdin();
         let mut stdin = stdin.lock(); // locking is optional
 
-        let mut line = String::new();
+        let mut data = Vec::new();
 
-        while stdin.read_line(&mut line)? > 0 {
-            println!("{}", ex.calculate(line.as_bytes())?);
-            line.clear();
+        while stdin.read_until(b'\n', &mut data)? > 0 {
+            println!("{}", ex.calculate(&data)?);
+            data.clear();
         }
         Ok(())
     } else {
