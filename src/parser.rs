@@ -1,6 +1,6 @@
 //! Parser is used to parse an expression for use against JSON data.
 
-use crate::lexer::{Token, Tokenizer};
+use crate::lexer::{Token, TokenKind, Tokenizer};
 use anyhow::anyhow;
 use gjson::Kind;
 use std::collections::BTreeMap;
@@ -83,19 +83,37 @@ pub trait Expression: Debug {
 
 type BoxedExpression = Box<dyn Expression>;
 
-pub struct Parser;
+pub struct Parser<'a> {
+    exp: &'a [u8],
+}
 
-impl Parser {
+impl<'a> Parser<'a> {
+    fn new(exp: &'a [u8]) -> Self {
+        Parser { exp }
+    }
+
     /// parses the provided expression and turning it into a computation that can be applied to some
     /// source data.
     ///
     /// # Errors
     ///
     /// Will return `Err` the expression is invalid.
-    pub fn parse(expression: &[u8]) -> anyhow::Result<BoxedExpression> {
-        let tokens = Tokenizer::tokenize(expression)?;
+    #[inline]
+    pub fn parse(expression: &str) -> anyhow::Result<BoxedExpression> {
+        Parser::parse_bytes(expression.as_bytes())
+    }
+
+    /// parses the provided expression as bytes and turning it into a computation that can be applied to some
+    /// source data.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` the expression is invalid.
+    pub fn parse_bytes(expression: &[u8]) -> anyhow::Result<BoxedExpression> {
+        let tokens = Tokenizer::tokenize_bytes(expression)?;
         let mut pos = 0;
-        let result = parse_value(&tokens, &mut pos)?;
+        let parser = Parser::new(expression);
+        let result = parser.parse_value(&tokens, &mut pos)?;
 
         if let Some(result) = result {
             Ok(result)
@@ -103,145 +121,206 @@ impl Parser {
             Err(anyhow!("no expression results found"))
         }
     }
-}
-fn parse_value(tokens: &[Token], pos: &mut usize) -> anyhow::Result<Option<BoxedExpression>> {
-    let tok = tokens.get(*pos);
-    *pos += 1;
-    match tok {
-        Some(Token::Identifier(s)) => parse_op(Box::new(Ident { ident: s.clone() }), tokens, pos),
-        Some(Token::String(s)) => parse_op(Box::new(Str { s: s.clone() }), tokens, pos),
-        Some(Token::Number(n)) => parse_op(Box::new(Num { n: *n }), tokens, pos),
-        Some(Token::Boolean(b)) => parse_op(Box::new(Bool { b: *b }), tokens, pos),
-        Some(Token::Null) => parse_op(Box::new(Null {}), tokens, pos),
-        Some(Token::Not) => {
-            let v = parse_value(tokens, pos)?
-                .map_or_else(|| Err(anyhow!("no identifier after !")), Ok)?;
-            parse_op(Box::new(Not { value: v }), tokens, pos)
-        }
-        Some(Token::OpenBracket) => {
-            let mut arr = Vec::new();
 
-            while let Some(v) = parse_value(tokens, pos)? {
-                arr.push(v);
+    fn parse_value(
+        &self,
+        tokens: &[Token],
+        pos: &mut usize,
+    ) -> anyhow::Result<Option<BoxedExpression>> {
+        if let Some(tok) = tokens.get(*pos) {
+            *pos += 1;
+            match tok.kind {
+                TokenKind::Identifier => self.parse_op(
+                    Box::new(Ident {
+                        ident: String::from_utf8_lossy(
+                            &self.exp[(tok.start + 1) as usize..tok.end as usize],
+                        )
+                        .into_owned(),
+                    }),
+                    tokens,
+                    pos,
+                ),
+                TokenKind::QuotedString => self.parse_op(
+                    Box::new(Str {
+                        s: String::from_utf8_lossy(
+                            &self.exp[(tok.start + 1) as usize..(tok.end - 1) as usize],
+                        )
+                        .into_owned(),
+                    }),
+                    tokens,
+                    pos,
+                ),
+                TokenKind::Number => self.parse_op(
+                    Box::new(Num {
+                        n: String::from_utf8_lossy(&self.exp[tok.start as usize..tok.end as usize])
+                            .parse()?,
+                    }),
+                    tokens,
+                    pos,
+                ),
+                TokenKind::BooleanTrue => self.parse_op(Box::new(Bool { b: true }), tokens, pos),
+                TokenKind::BooleanFalse => self.parse_op(Box::new(Bool { b: false }), tokens, pos),
+                TokenKind::Null => self.parse_op(Box::new(Null {}), tokens, pos),
+                TokenKind::Not => {
+                    let v = self
+                        .parse_value(tokens, pos)?
+                        .map_or_else(|| Err(anyhow!("no identifier after !")), Ok)?;
+                    self.parse_op(Box::new(Not { value: v }), tokens, pos)
+                }
+                TokenKind::OpenBracket => {
+                    let mut arr = Vec::new();
+
+                    while let Some(v) = self.parse_value(tokens, pos)? {
+                        arr.push(v);
+                    }
+                    let arr = Arr { arr };
+                    self.parse_op(Box::new(arr), tokens, pos)
+                }
+                TokenKind::Comma => match self.parse_value(tokens, pos)? {
+                    Some(v) => Ok(Some(v)),
+                    None => Err(anyhow!("value required after comma: {:?}", tok)),
+                },
+                TokenKind::OpenParen => {
+                    let op = self
+                        .parse_value(tokens, pos)?
+                        .map_or_else(|| Err(anyhow!("no value between ()")), Ok)?;
+                    self.parse_op(op, tokens, pos)
+                }
+                TokenKind::CloseParen => Err(anyhow!("no value between ()")),
+                TokenKind::CloseBracket => Ok(None),
+                _ => Err(anyhow!("invalid value: {:?}", tok)),
             }
-            let arr = Arr { arr };
-            parse_op(Box::new(arr), tokens, pos)
+        } else {
+            Ok(None)
         }
-        Some(Token::Comma) => match parse_value(tokens, pos)? {
-            Some(v) => Ok(Some(v)),
-            None => Err(anyhow!("value required after comma: {:?}", tok)),
-        },
-        Some(Token::OpenParen) => {
-            let op = parse_value(tokens, pos)?
-                .map_or_else(|| Err(anyhow!("no value between ()")), Ok)?;
-            parse_op(op, tokens, pos)
-        }
-        Some(Token::CloseParen) => Err(anyhow!("no value between ()")),
-        Some(Token::CloseBracket) | None => Ok(None),
-        _ => Err(anyhow!("invalid value: {:?}", tok)),
     }
-}
 
-fn parse_op(
-    value: BoxedExpression,
-    tokens: &[Token],
-    pos: &mut usize,
-) -> anyhow::Result<Option<BoxedExpression>> {
-    let tok = tokens.get(*pos);
-    *pos += 1;
-    match tok {
-        Some(Token::In) => {
-            let right =
-                parse_value(tokens, pos)?.map_or_else(|| Err(anyhow!("no value after IN")), Ok)?;
-            Ok(Some(Box::new(In { left: value, right })))
-        }
-        Some(Token::Contains) => {
-            let right = parse_value(tokens, pos)?
-                .map_or_else(|| Err(anyhow!("no value after CONTAINS")), Ok)?;
-            Ok(Some(Box::new(Contains { left: value, right })))
-        }
-        Some(Token::StartsWith) => {
-            let right = parse_value(tokens, pos)?
-                .map_or_else(|| Err(anyhow!("no value after STARTSWITH")), Ok)?;
-            Ok(Some(Box::new(StartsWith { left: value, right })))
-        }
-        Some(Token::EndsWith) => {
-            let right = parse_value(tokens, pos)?
-                .map_or_else(|| Err(anyhow!("no value after ENDSWITH")), Ok)?;
-            Ok(Some(Box::new(EndsWith { left: value, right })))
-        }
-        Some(Token::And) => {
-            let right =
-                parse_value(tokens, pos)?.map_or_else(|| Err(anyhow!("no value after AND")), Ok)?;
-            Ok(Some(Box::new(And { left: value, right })))
-        }
-        Some(Token::Or) => {
-            let right =
-                parse_value(tokens, pos)?.map_or_else(|| Err(anyhow!("no value after OR")), Ok)?;
-            Ok(Some(Box::new(Or { left: value, right })))
-        }
-        Some(Token::Gt) => {
-            let right =
-                parse_value(tokens, pos)?.map_or_else(|| Err(anyhow!("no value after >")), Ok)?;
-            Ok(Some(Box::new(Gt { left: value, right })))
-        }
-        Some(Token::Gte) => {
-            let right =
-                parse_value(tokens, pos)?.map_or_else(|| Err(anyhow!("no value after >=")), Ok)?;
-            Ok(Some(Box::new(Gte { left: value, right })))
-        }
-        Some(Token::Lt) => {
-            let right =
-                parse_value(tokens, pos)?.map_or_else(|| Err(anyhow!("no value after <")), Ok)?;
-            Ok(Some(Box::new(Lt { left: value, right })))
-        }
-        Some(Token::Lte) => {
-            let right =
-                parse_value(tokens, pos)?.map_or_else(|| Err(anyhow!("no value after <=")), Ok)?;
-            Ok(Some(Box::new(Lte { left: value, right })))
-        }
-        Some(Token::Equals) => {
-            let right =
-                parse_value(tokens, pos)?.map_or_else(|| Err(anyhow!("no value after ==")), Ok)?;
-            Ok(Some(Box::new(Eq { left: value, right })))
-        }
-        Some(Token::Add) => {
-            let right =
-                parse_value(tokens, pos)?.map_or_else(|| Err(anyhow!("no value after +")), Ok)?;
-            Ok(Some(Box::new(Add { left: value, right })))
-        }
-        Some(Token::Subtract) => {
-            let right =
-                parse_value(tokens, pos)?.map_or_else(|| Err(anyhow!("no value after -")), Ok)?;
-            Ok(Some(Box::new(Sub { left: value, right })))
-        }
-        Some(Token::Multiply) => {
-            let right =
-                parse_value(tokens, pos)?.map_or_else(|| Err(anyhow!("no value after *")), Ok)?;
-            Ok(Some(Box::new(Mult { left: value, right })))
-        }
-        Some(Token::Divide) => {
-            let right =
-                parse_value(tokens, pos)?.map_or_else(|| Err(anyhow!("no value after /")), Ok)?;
-            Ok(Some(Box::new(Div { left: value, right })))
-        }
-        Some(Token::Not) => {
-            let op = parse_op(value, tokens, pos)
-                .map_or_else(|_| Err(anyhow!("invalid operation after !")), Ok)?;
-            if let Some(value) = op {
-                let n = Not { value };
-                Ok(Some(Box::new(n)))
-            } else {
-                Err(anyhow!("no operator after !"))
+    #[allow(clippy::too_many_lines)]
+    fn parse_op(
+        &self,
+        value: BoxedExpression,
+        tokens: &[Token],
+        pos: &mut usize,
+    ) -> anyhow::Result<Option<BoxedExpression>> {
+        if let Some(tok) = tokens.get(*pos) {
+            *pos += 1;
+            match tok.kind {
+                TokenKind::In => {
+                    let right = self
+                        .parse_value(tokens, pos)?
+                        .map_or_else(|| Err(anyhow!("no value after IN")), Ok)?;
+                    Ok(Some(Box::new(In { left: value, right })))
+                }
+                TokenKind::Contains => {
+                    let right = self
+                        .parse_value(tokens, pos)?
+                        .map_or_else(|| Err(anyhow!("no value after CONTAINS")), Ok)?;
+                    Ok(Some(Box::new(Contains { left: value, right })))
+                }
+                TokenKind::StartsWith => {
+                    let right = self
+                        .parse_value(tokens, pos)?
+                        .map_or_else(|| Err(anyhow!("no value after STARTSWITH")), Ok)?;
+                    Ok(Some(Box::new(StartsWith { left: value, right })))
+                }
+                TokenKind::EndsWith => {
+                    let right = self
+                        .parse_value(tokens, pos)?
+                        .map_or_else(|| Err(anyhow!("no value after ENDSWITH")), Ok)?;
+                    Ok(Some(Box::new(EndsWith { left: value, right })))
+                }
+                TokenKind::And => {
+                    let right = self
+                        .parse_value(tokens, pos)?
+                        .map_or_else(|| Err(anyhow!("no value after AND")), Ok)?;
+                    Ok(Some(Box::new(And { left: value, right })))
+                }
+                TokenKind::Or => {
+                    let right = self
+                        .parse_value(tokens, pos)?
+                        .map_or_else(|| Err(anyhow!("no value after OR")), Ok)?;
+                    Ok(Some(Box::new(Or { left: value, right })))
+                }
+                TokenKind::Gt => {
+                    let right = self
+                        .parse_value(tokens, pos)?
+                        .map_or_else(|| Err(anyhow!("no value after >")), Ok)?;
+                    Ok(Some(Box::new(Gt { left: value, right })))
+                }
+                TokenKind::Gte => {
+                    let right = self
+                        .parse_value(tokens, pos)?
+                        .map_or_else(|| Err(anyhow!("no value after >=")), Ok)?;
+                    Ok(Some(Box::new(Gte { left: value, right })))
+                }
+                TokenKind::Lt => {
+                    let right = self
+                        .parse_value(tokens, pos)?
+                        .map_or_else(|| Err(anyhow!("no value after <")), Ok)?;
+                    Ok(Some(Box::new(Lt { left: value, right })))
+                }
+                TokenKind::Lte => {
+                    let right = self
+                        .parse_value(tokens, pos)?
+                        .map_or_else(|| Err(anyhow!("no value after <=")), Ok)?;
+                    Ok(Some(Box::new(Lte { left: value, right })))
+                }
+                TokenKind::Equals => {
+                    let right = self
+                        .parse_value(tokens, pos)?
+                        .map_or_else(|| Err(anyhow!("no value after ==")), Ok)?;
+                    Ok(Some(Box::new(Eq { left: value, right })))
+                }
+                TokenKind::Add => {
+                    let right = self
+                        .parse_value(tokens, pos)?
+                        .map_or_else(|| Err(anyhow!("no value after +")), Ok)?;
+                    Ok(Some(Box::new(Add { left: value, right })))
+                }
+                TokenKind::Subtract => {
+                    let right = self
+                        .parse_value(tokens, pos)?
+                        .map_or_else(|| Err(anyhow!("no value after -")), Ok)?;
+                    Ok(Some(Box::new(Sub { left: value, right })))
+                }
+                TokenKind::Multiply => {
+                    let right = self
+                        .parse_value(tokens, pos)?
+                        .map_or_else(|| Err(anyhow!("no value after *")), Ok)?;
+                    Ok(Some(Box::new(Mult { left: value, right })))
+                }
+                TokenKind::Divide => {
+                    let right = self
+                        .parse_value(tokens, pos)?
+                        .map_or_else(|| Err(anyhow!("no value after /")), Ok)?;
+                    Ok(Some(Box::new(Div { left: value, right })))
+                }
+                TokenKind::Not => {
+                    let op = self
+                        .parse_op(value, tokens, pos)
+                        .map_or_else(|_| Err(anyhow!("invalid operation after !")), Ok)?;
+                    if let Some(value) = op {
+                        let n = Not { value };
+                        Ok(Some(Box::new(n)))
+                    } else {
+                        Err(anyhow!("no operator after !"))
+                    }
+                }
+                TokenKind::OpenParen => {
+                    let op = self
+                        .parse_value(tokens, pos)?
+                        .map_or_else(|| Err(anyhow!("no value between ()")), Ok)?;
+                    self.parse_op(op, tokens, pos)
+                }
+                TokenKind::CloseBracket | TokenKind::CloseParen => Ok(Some(value)),
+                _ => Err(anyhow!(
+                    "invalid token after ident '{:?}'",
+                    String::from_utf8_lossy(&self.exp[tok.start as usize..=tok.end as usize])
+                )),
             }
+        } else {
+            Ok(Some(value))
         }
-        Some(Token::OpenParen) => {
-            let op = parse_value(tokens, pos)?
-                .map_or_else(|| Err(anyhow!("no value between ()")), Ok)?;
-            parse_op(op, tokens, pos)
-        }
-        Some(Token::CloseBracket | Token::CloseParen) | None => Ok(Some(value)),
-        _ => Err(anyhow!("invalid token after ident '{:?}'", tok.unwrap())),
     }
 }
 
@@ -261,6 +340,8 @@ impl Expression for Add {
             (Value::String(s1), Value::Null) => Ok(Value::String(s1)),
             (Value::Null, Value::String(s2)) => Ok(Value::String(s2)),
             (Value::Number(n1), Value::Number(n2)) => Ok(Value::Number(n1 + n2)),
+            (Value::Number(n1), Value::Null) => Ok(Value::Number(n1)),
+            (Value::Null, Value::Number(n2)) => Ok(Value::Number(n2)),
             (l, r) => Err(Error::UnsupportedTypeComparison(format!(
                 "{:?} + {:?}",
                 l, r
@@ -659,7 +740,7 @@ mod tests {
         let src = r#"{"field1":"Dean","field2":"Karn"}"#;
         let expression = r#".field1 + " " + .field2"#;
 
-        let ex = Parser::parse(expression.as_bytes())?;
+        let ex = Parser::parse(expression)?;
         let result = ex.calculate(src.as_ref())?;
         assert_eq!(Value::String("Dean Karn".to_string()), result);
         Ok(())
@@ -670,7 +751,7 @@ mod tests {
         let src = r#"{"field1":10.1,"field2":23.23}"#;
         let expression = r#".field1 + .field2"#;
 
-        let ex = Parser::parse(expression.as_bytes())?;
+        let ex = Parser::parse(expression)?;
         let result = ex.calculate(src.as_ref())?;
         assert_eq!(Value::Number(33.33), result);
         Ok(())
@@ -681,7 +762,7 @@ mod tests {
         let src = r#"{"field1":10.1,"field2":23.23}"#;
         let expression = r#".field2 - .field1"#;
 
-        let ex = Parser::parse(expression.as_bytes())?;
+        let ex = Parser::parse(expression)?;
         let result = ex.calculate(src.as_ref())?;
         assert_eq!(Value::Number(13.13), result);
         Ok(())
@@ -692,7 +773,7 @@ mod tests {
         let src = r#"{"field1":11.1,"field2":3}"#;
         let expression = r#".field2 * .field1"#;
 
-        let ex = Parser::parse(expression.as_bytes())?;
+        let ex = Parser::parse(expression)?;
         let result = ex.calculate(src.as_ref())?;
         assert_eq!(Value::Number(33.3), result);
         Ok(())
@@ -703,7 +784,7 @@ mod tests {
         let src = r#"{"field1":3,"field2":33.3}"#;
         let expression = r#".field2 / .field1"#;
 
-        let ex = Parser::parse(expression.as_bytes())?;
+        let ex = Parser::parse(expression)?;
         let result = ex.calculate(src.as_ref())?;
         assert_eq!(Value::Number(11.1), result);
         Ok(())
@@ -714,7 +795,7 @@ mod tests {
         let src = "";
         let expression = r#"11.1 + 22.2"#;
 
-        let ex = Parser::parse(expression.as_bytes())?;
+        let ex = Parser::parse(expression)?;
         let result = ex.calculate(src.as_ref())?;
         assert_eq!(Value::Number(33.3), result);
         Ok(())
@@ -725,7 +806,7 @@ mod tests {
         let src = r#"{"field1":3,"field2":33.3}"#;
         let expression = r#"11.1 + .field1"#;
 
-        let ex = Parser::parse(expression.as_bytes())?;
+        let ex = Parser::parse(expression)?;
         let result = ex.calculate(src.as_ref())?;
         assert_eq!(Value::Number(14.1), result);
         Ok(())
@@ -736,7 +817,7 @@ mod tests {
         let src = r#"{"field1":3,"field2":33.3}"#;
         let expression = r#"11.1 == .field1"#;
 
-        let ex = Parser::parse(expression.as_bytes())?;
+        let ex = Parser::parse(expression)?;
         let result = ex.calculate(src.as_ref())?;
         assert_eq!(Value::Bool(false), result);
         Ok(())
@@ -747,7 +828,7 @@ mod tests {
         let src = r#"{"field1":11.1,"field2":33.3}"#;
         let expression = r#"11.1 == .field1"#;
 
-        let ex = Parser::parse(expression.as_bytes())?;
+        let ex = Parser::parse(expression)?;
         let result = ex.calculate(src.as_ref())?;
         assert_eq!(Value::Bool(true), result);
         Ok(())
@@ -758,7 +839,7 @@ mod tests {
         let src = r#"{"field1":11.1,"field2":33.3}"#;
         let expression = r#"11.1 > .field1"#;
 
-        let ex = Parser::parse(expression.as_bytes())?;
+        let ex = Parser::parse(expression)?;
         let result = ex.calculate(src.as_ref())?;
         assert_eq!(Value::Bool(false), result);
         Ok(())
@@ -769,7 +850,7 @@ mod tests {
         let src = r#"{"field1":11.1,"field2":33.3}"#;
         let expression = r#"11.1 >= .field1"#;
 
-        let ex = Parser::parse(expression.as_bytes())?;
+        let ex = Parser::parse(expression)?;
         let result = ex.calculate(src.as_ref())?;
         assert_eq!(Value::Bool(true), result);
         Ok(())
@@ -777,7 +858,7 @@ mod tests {
 
     #[test]
     fn bool_true() -> anyhow::Result<()> {
-        let ex = Parser::parse("true == true".as_bytes())?;
+        let ex = Parser::parse("true == true")?;
         let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(true), result);
         Ok(())
@@ -785,7 +866,7 @@ mod tests {
 
     #[test]
     fn bool_false() -> anyhow::Result<()> {
-        let ex = Parser::parse("false == true".as_bytes())?;
+        let ex = Parser::parse("false == true")?;
         let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(false), result);
         Ok(())
@@ -793,7 +874,7 @@ mod tests {
 
     #[test]
     fn null_eq() -> anyhow::Result<()> {
-        let ex = Parser::parse("NULL == NULL".as_bytes())?;
+        let ex = Parser::parse("NULL == NULL")?;
         let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(true), result);
         Ok(())
@@ -801,15 +882,15 @@ mod tests {
 
     #[test]
     fn or() -> anyhow::Result<()> {
-        let ex = Parser::parse("true || false".as_bytes())?;
+        let ex = Parser::parse("true || false")?;
         let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(true), result);
 
-        let ex = Parser::parse("false || true".as_bytes())?;
+        let ex = Parser::parse("false || true")?;
         let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(true), result);
 
-        let ex = Parser::parse("false || false".as_bytes())?;
+        let ex = Parser::parse("false || false")?;
         let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(false), result);
         Ok(())
@@ -817,19 +898,19 @@ mod tests {
 
     #[test]
     fn and() -> anyhow::Result<()> {
-        let ex = Parser::parse("true && true".as_bytes())?;
+        let ex = Parser::parse("true && true")?;
         let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(true), result);
 
-        let ex = Parser::parse("false && false".as_bytes())?;
+        let ex = Parser::parse("false && false")?;
         let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(false), result);
 
-        let ex = Parser::parse("true && false".as_bytes())?;
+        let ex = Parser::parse("true && false")?;
         let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(false), result);
 
-        let ex = Parser::parse("false && true".as_bytes())?;
+        let ex = Parser::parse("false && true")?;
         let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(false), result);
         Ok(())
@@ -837,11 +918,11 @@ mod tests {
 
     #[test]
     fn contains() -> anyhow::Result<()> {
-        let ex = Parser::parse(r#""team" CONTAINS "i""#.as_bytes())?;
+        let ex = Parser::parse(r#""team" CONTAINS "i""#)?;
         let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(false), result);
 
-        let ex = Parser::parse(r#""team" CONTAINS "ea""#.as_bytes())?;
+        let ex = Parser::parse(r#""team" CONTAINS "ea""#)?;
         let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(true), result);
         Ok(())
@@ -849,11 +930,11 @@ mod tests {
 
     #[test]
     fn starts_with() -> anyhow::Result<()> {
-        let ex = Parser::parse(r#""team" STARTSWITH "i""#.as_bytes())?;
+        let ex = Parser::parse(r#""team" STARTSWITH "i""#)?;
         let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(false), result);
 
-        let ex = Parser::parse(r#""team" STARTSWITH "te""#.as_bytes())?;
+        let ex = Parser::parse(r#""team" STARTSWITH "te""#)?;
         let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(true), result);
         Ok(())
@@ -861,11 +942,11 @@ mod tests {
 
     #[test]
     fn ends_with() -> anyhow::Result<()> {
-        let ex = Parser::parse(r#""team" ENDSWITH "i""#.as_bytes())?;
+        let ex = Parser::parse(r#""team" ENDSWITH "i""#)?;
         let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(false), result);
 
-        let ex = Parser::parse(r#""team" ENDSWITH "am""#.as_bytes())?;
+        let ex = Parser::parse(r#""team" ENDSWITH "am""#)?;
         let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(true), result);
         Ok(())
@@ -876,14 +957,14 @@ mod tests {
         let src = r#"{"field1":["test"]}"#.as_bytes();
         let expression = r#""test" IN .field1"#;
 
-        let ex = Parser::parse(expression.as_bytes())?;
+        let ex = Parser::parse(expression)?;
         let result = ex.calculate(src)?;
         assert_eq!(Value::Bool(true), result);
 
         let src = r#"{"field1":["test"]}"#.as_bytes();
         let expression = r#""me" IN .field1"#;
 
-        let ex = Parser::parse(expression.as_bytes())?;
+        let ex = Parser::parse(expression)?;
         let result = ex.calculate(src)?;
         assert_eq!(Value::Bool(false), result);
         Ok(())
@@ -892,27 +973,27 @@ mod tests {
     #[test]
     fn inn_arr() -> anyhow::Result<()> {
         let expression = r#""me" IN ["me"]"#;
-        let ex = Parser::parse(expression.as_bytes())?;
+        let ex = Parser::parse(expression)?;
         let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(true), result);
 
         let expression = r#""me" IN ["z"]"#;
-        let ex = Parser::parse(expression.as_bytes())?;
+        let ex = Parser::parse(expression)?;
         let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(false), result);
 
         let expression = r#""me" IN []"#;
-        let ex = Parser::parse(expression.as_bytes())?;
+        let ex = Parser::parse(expression)?;
         let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(false), result);
 
         let expression = r#"[] == []"#;
-        let ex = Parser::parse(expression.as_bytes())?;
+        let ex = Parser::parse(expression)?;
         let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(true), result);
 
         let expression = r#"[] == ["test"]"#;
-        let ex = Parser::parse(expression.as_bytes())?;
+        let ex = Parser::parse(expression)?;
         let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(false), result);
 
@@ -922,12 +1003,12 @@ mod tests {
     #[test]
     fn ampersand() -> anyhow::Result<()> {
         let expression = "(1 + 1) / 2";
-        let ex = Parser::parse(expression.as_bytes())?;
+        let ex = Parser::parse(expression)?;
         let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Number(1.0), result);
 
         let expression = "1 + 1 / 2";
-        let ex = Parser::parse(expression.as_bytes())?;
+        let ex = Parser::parse(expression)?;
         let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Number(1.5), result);
         Ok(())
@@ -937,11 +1018,11 @@ mod tests {
     fn company_employees() -> anyhow::Result<()> {
         let src = r#"{"name":"Company","properties":{"employees":50}}"#.as_bytes();
         let expression = ".properties.employees > 20";
-        let ex = Parser::parse(expression.as_bytes())?;
+        let ex = Parser::parse(expression)?;
         let result = ex.calculate(src)?;
         assert_eq!(Value::Bool(true), result);
 
-        let expression = ".properties.employees > 50".as_bytes();
+        let expression = ".properties.employees > 50";
         let ex = Parser::parse(expression)?;
         let result = ex.calculate(src)?;
         assert_eq!(Value::Bool(false), result);
@@ -952,16 +1033,16 @@ mod tests {
     fn company_not_employees() -> anyhow::Result<()> {
         let src = r#"{"name":"Company","properties":{"employees":50}}"#.as_bytes();
         let expression = ".properties.employees !> 20";
-        let ex = Parser::parse(expression.as_bytes())?;
+        let ex = Parser::parse(expression)?;
         let result = ex.calculate(src)?;
         assert_eq!(Value::Bool(false), result);
 
-        let expression = ".properties.employees !> 50".as_bytes();
+        let expression = ".properties.employees !> 50";
         let ex = Parser::parse(expression)?;
         let result = ex.calculate(src)?;
         assert_eq!(Value::Bool(true), result);
 
-        let expression = ".properties.employees != 50".as_bytes();
+        let expression = ".properties.employees != 50";
         let ex = Parser::parse(expression)?;
         let result = ex.calculate(src)?;
         assert_eq!(Value::Bool(false), result);
@@ -972,31 +1053,31 @@ mod tests {
     fn company_not() -> anyhow::Result<()> {
         let src = r#"{"f1":true,"f2":false}"#.as_bytes();
         let expression = "!.f1";
-        let ex = Parser::parse(expression.as_bytes())?;
+        let ex = Parser::parse(expression)?;
         let result = ex.calculate(src)?;
         assert_eq!(Value::Bool(false), result);
 
         let src = r#"{"f1":true,"f2":false}"#.as_bytes();
         let expression = "!.f2";
-        let ex = Parser::parse(expression.as_bytes())?;
+        let ex = Parser::parse(expression)?;
         let result = ex.calculate(src)?;
         assert_eq!(Value::Bool(true), result);
 
         let src = r#"{"f1":true,"f2":false}"#.as_bytes();
         let expression = "!(.f1 && .f2)";
-        let ex = Parser::parse(expression.as_bytes())?;
+        let ex = Parser::parse(expression)?;
         let result = ex.calculate(src)?;
         assert_eq!(Value::Bool(true), result);
 
         let src = r#"{"f1":true,"f2":false}"#.as_bytes();
         let expression = "!(.f1 != .f2)";
-        let ex = Parser::parse(expression.as_bytes())?;
+        let ex = Parser::parse(expression)?;
         let result = ex.calculate(src)?;
         assert_eq!(Value::Bool(false), result);
 
         let src = r#"{"f1":true,"f2":false}"#.as_bytes();
         let expression = "!(.f1 != .f2) && !.f2";
-        let ex = Parser::parse(expression.as_bytes())?;
+        let ex = Parser::parse(expression)?;
         let result = ex.calculate(src)?;
         assert_eq!(Value::Bool(false), result);
 

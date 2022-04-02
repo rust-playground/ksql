@@ -8,13 +8,13 @@ use ksql::parser::Parser;
 fn benchmark_lexer(c: &mut Criterion) {
     let mut group = c.benchmark_group("lex_individual");
     for (name, src) in [
-        ("identifier", ".field1".as_bytes()),
-        ("string", r#""My Name""#.as_bytes()),
-        ("number", "123.34".as_bytes()),
-        ("bool", "true".as_bytes()),
-        ("single_ident", "=".as_bytes()),
-        ("double_ident", ">=".as_bytes()),
-        ("string_ident", "CONTAINS".as_bytes()),
+        ("identifier", ".field1"),
+        ("string", r#""My Name""#),
+        ("number", "123.34"),
+        ("bool", "true"),
+        ("single_ident", "="),
+        ("double_ident", ">="),
+        ("string_ident", "CONTAINS"),
     ]
     .iter()
     {
@@ -31,10 +31,10 @@ fn benchmark_lexer(c: &mut Criterion) {
     for (name, src) in [
         (
             "string_ident_add_multi",
-            r#".first_name + " " + .last_name"#.as_bytes(),
+            r#".first_name + " " + .last_name"#,
         ),
-        ("math", r#"1 + 1 / 2"#.as_bytes()),
-        ("math_paren", r#"(1 + 1) / 2"#.as_bytes()),
+        ("math", r#"1 + 1 / 2"#),
+        ("math_paren", r#"(1 + 1) / 2"#),
     ]
     .iter()
     {
@@ -66,7 +66,7 @@ fn benchmark_expressions(c: &mut Criterion) {
     ]
     .iter()
     {
-        let ex = Parser::parse(expression.as_bytes()).unwrap();
+        let ex = Parser::parse(expression).unwrap();
         group.throughput(Throughput::Bytes(src.len() as u64));
         group.bench_function(*name, |b| {
             b.iter(|| {
@@ -97,7 +97,7 @@ fn benchmark_expressions(c: &mut Criterion) {
     ]
     .iter()
     {
-        let ex = Parser::parse(expression.as_bytes()).unwrap();
+        let ex = Parser::parse(expression).unwrap();
         group.throughput(Throughput::Bytes(src.len() as u64));
         group.bench_function(*name, |b| {
             b.iter(|| {

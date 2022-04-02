@@ -20,7 +20,7 @@ fn main() -> anyhow::Result<()> {
 
     let is_pipe = !atty::is(atty::Stream::Stdin);
 
-    let ex = Parser::parse(opts.expression.as_bytes())?;
+    let ex = Parser::parse(&opts.expression)?;
 
     let stdout = stdout();
     let mut stdout = stdout.lock();
