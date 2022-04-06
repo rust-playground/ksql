@@ -1,7 +1,7 @@
 [package]
 name = "ksql"
 description = "A JSON data expression lexer, parser, cli and library"
-version = "0.3.0"
+version = "0.2.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 readme = "README.md"
@@ -19,7 +19,7 @@ keywords = [
 anyhow = "1.0.56"
 atty = "0.2.14"
 clap = { version = "3.1.8", features = ["derive"] }
-gjson = { version = "0.8.0", git = "https://github.com/deankarn/gjson.rs", branch = "support-bytes" }
+gjson = "0.8.1"
 thiserror = "1.0.30"
 
 [dev-dependencies]

@@ -38,6 +38,7 @@ pub enum TokenKind {
     CloseParen,
 }
 
+/// A lexer for the KSQL expression syntax.
 pub struct Tokenizer<'a> {
     pos: u32,
     remaining: &'a [u8],
@@ -71,6 +72,7 @@ impl<'a> Tokenizer<'a> {
     /// # Errors
     ///
     /// Will return `Err` if the expression is invalid.
+    #[inline]
     pub fn tokenize(src: &str) -> Result<Vec<Token>> {
         Tokenizer::tokenize_bytes(src.as_bytes())
     }
@@ -130,8 +132,10 @@ where
     }
 }
 
+/// Result of a single tokenization attempt.
 pub type Result<T> = std::result::Result<T, Error>;
 
+/// Error type for the lexer.
 #[derive(Error, Debug, PartialEq)]
 pub enum Error {
     #[error("invalid identifier: {0}")]

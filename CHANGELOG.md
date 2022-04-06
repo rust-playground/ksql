@@ -6,14 +6,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.2.0] - 2022-03-20
+## [0.2.0] - 2022-04-06
 ### Changed
 - Cleaned up code.
 - AND->&& and OR->|| and =->==in lexer.
 - Expression signature to accept &[u8] instead of &str
+- Lexer token return signature reducing its size from 32->12 bytes
 
 ### Added
 - Not token type and support in lexer + parser.
+- More documentation.
 
 ### Fixed
 - Identifier parsing when it ends in a parenthesis or bracket.

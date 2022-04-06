@@ -2,6 +2,8 @@ name: Lint & Test
 on:
   pull_request:
     types: [opened, edited, reopened, synchronize]
+env:
+  CARGO_TERM_COLOR: always
 jobs:
   test:
     strategy:

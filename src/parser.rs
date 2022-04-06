@@ -1,4 +1,18 @@
 //! Parser is used to parse an expression for use against JSON data.
+//!
+//! ```rust
+//! use ksql::parser::{Parser, Value};
+//! use std::error::Error;
+//!
+//! fn main() -> Result<(), Box<dyn Error>>{
+//!     let src = r#"{"name":"MyCompany", "properties":{"employees": 50}"#.as_bytes();
+//!     let ex = Parser::parse(".properties.employees > 20")?;
+//!     let result = ex.calculate(src)?;
+//!     assert_eq!(Value::Bool(true), result);
+//!     Ok(())
+//! }
+//! ```
+//!
 
 use crate::lexer::{Token, TokenKind, Tokenizer};
 use anyhow::anyhow;
@@ -7,6 +21,7 @@ use std::collections::BTreeMap;
 use std::fmt::{Debug, Display, Formatter};
 use thiserror::Error;
 
+/// Represents the calculated Expression result.
 #[derive(Debug, PartialEq, Clone)]
 pub enum Value {
     Null,
@@ -71,18 +86,25 @@ impl<'a> From<gjson::Value<'a>> for Value {
     }
 }
 
+/// Represents a stateless parsed expression that can be applied to JSON data.
 pub trait Expression: Debug {
-    /// Will execute the parsed expression and apply it against the supplied data.
+    /// Will execute the parsed expression and apply it against the supplied json data.
+    ///
+    /// # Warnings
+    ///
+    /// This function assumes that the supplied JSON data is valid.
     ///
     /// # Errors
     ///
     /// Will return `Err` if the expression cannot be applied to the supplied data due to invalid
     /// data type comparisons.
-    fn calculate(&self, src: &[u8]) -> Result<Value>;
+    fn calculate(&self, json: &[u8]) -> Result<Value>;
 }
 
+/// Is an alias for a Box<dyn Expression>
 type BoxedExpression = Box<dyn Expression>;
 
+/// Parses a supplied expression and returns a `BoxedExpression`.
 pub struct Parser<'a> {
     exp: &'a [u8],
 }
@@ -537,7 +559,7 @@ struct Ident {
 
 impl Expression for Ident {
     fn calculate(&self, src: &[u8]) -> Result<Value> {
-        Ok(gjson::get_bytes(src, &self.ident).into())
+        Ok(unsafe { gjson::get_bytes(src, &self.ident).into() })
     }
 }
 
@@ -723,8 +745,10 @@ impl Expression for Arr {
     }
 }
 
+/// Result type for the `parse` function.
 pub type Result<T> = std::result::Result<T, Error>;
 
+/// Error type for the expression parser.
 #[derive(Error, Debug, PartialEq)]
 pub enum Error {
     #[error("unsupported type comparison: {0}")]
