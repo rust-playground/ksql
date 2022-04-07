@@ -14,12 +14,11 @@
 //! ```
 //!
 
-use crate::lexer::{Token, TokenKind, Tokenizer};
+use crate::lexer::{TokenKind, Tokenizer};
 use anyhow::anyhow;
 use gjson::Kind;
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Display, Formatter};
-use std::result::Result as StdResult;
 use thiserror::Error;
 
 /// Represents the calculated Expression result.
@@ -108,11 +107,12 @@ type BoxedExpression = Box<dyn Expression>;
 /// Parses a supplied expression and returns a `BoxedExpression`.
 pub struct Parser<'a> {
     exp: &'a [u8],
+    tokenizer: Tokenizer<'a>,
 }
 
 impl<'a> Parser<'a> {
-    fn new(exp: &'a [u8]) -> Self {
-        Parser { exp }
+    fn new(exp: &'a [u8], tokenizer: Tokenizer<'a>) -> Self {
+        Parser { exp, tokenizer }
     }
 
     /// parses the provided expression and turning it into a computation that can be applied to some
@@ -133,10 +133,9 @@ impl<'a> Parser<'a> {
     ///
     /// Will return `Err` the expression is invalid.
     pub fn parse_bytes(expression: &[u8]) -> anyhow::Result<BoxedExpression> {
-        let tokens = Tokenizer::new_bytes(expression).collect::<StdResult<Vec<Token>, _>>()?;
-        let mut pos = 0;
-        let parser = Parser::new(expression);
-        let result = parser.parse_value(&tokens, &mut pos)?;
+        let tokenizer = Tokenizer::new_bytes(expression);
+        let mut parser = Parser::new(expression, tokenizer);
+        let result = parser.parse_value()?;
 
         if let Some(result) = result {
             Ok(result)
@@ -145,69 +144,53 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_value(
-        &self,
-        tokens: &[Token],
-        pos: &mut usize,
-    ) -> anyhow::Result<Option<BoxedExpression>> {
-        if let Some(tok) = tokens.get(*pos) {
-            *pos += 1;
+    fn parse_value(&mut self) -> anyhow::Result<Option<BoxedExpression>> {
+        if let Some(tok) = self.tokenizer.next() {
+            let tok = tok?;
             match tok.kind {
-                TokenKind::Identifier => self.parse_op(
-                    Box::new(Ident {
-                        ident: String::from_utf8_lossy(
-                            &self.exp[(tok.start + 1) as usize..tok.end as usize],
-                        )
-                        .into_owned(),
-                    }),
-                    tokens,
-                    pos,
-                ),
-                TokenKind::QuotedString => self.parse_op(
-                    Box::new(Str {
-                        s: String::from_utf8_lossy(
-                            &self.exp[(tok.start + 1) as usize..(tok.end - 1) as usize],
-                        )
-                        .into_owned(),
-                    }),
-                    tokens,
-                    pos,
-                ),
-                TokenKind::Number => self.parse_op(
-                    Box::new(Num {
-                        n: String::from_utf8_lossy(&self.exp[tok.start as usize..tok.end as usize])
-                            .parse()?,
-                    }),
-                    tokens,
-                    pos,
-                ),
-                TokenKind::BooleanTrue => self.parse_op(Box::new(Bool { b: true }), tokens, pos),
-                TokenKind::BooleanFalse => self.parse_op(Box::new(Bool { b: false }), tokens, pos),
-                TokenKind::Null => self.parse_op(Box::new(Null {}), tokens, pos),
+                TokenKind::Identifier => self.parse_op(Box::new(Ident {
+                    ident: String::from_utf8_lossy(
+                        &self.exp[(tok.start + 1) as usize..tok.end as usize],
+                    )
+                    .into_owned(),
+                })),
+                TokenKind::QuotedString => self.parse_op(Box::new(Str {
+                    s: String::from_utf8_lossy(
+                        &self.exp[(tok.start + 1) as usize..(tok.end - 1) as usize],
+                    )
+                    .into_owned(),
+                })),
+                TokenKind::Number => self.parse_op(Box::new(Num {
+                    n: String::from_utf8_lossy(&self.exp[tok.start as usize..tok.end as usize])
+                        .parse()?,
+                })),
+                TokenKind::BooleanTrue => self.parse_op(Box::new(Bool { b: true })),
+                TokenKind::BooleanFalse => self.parse_op(Box::new(Bool { b: false })),
+                TokenKind::Null => self.parse_op(Box::new(Null {})),
                 TokenKind::Not => {
                     let v = self
-                        .parse_value(tokens, pos)?
+                        .parse_value()?
                         .map_or_else(|| Err(anyhow!("no identifier after !")), Ok)?;
-                    self.parse_op(Box::new(Not { value: v }), tokens, pos)
+                    self.parse_op(Box::new(Not { value: v }))
                 }
                 TokenKind::OpenBracket => {
                     let mut arr = Vec::new();
 
-                    while let Some(v) = self.parse_value(tokens, pos)? {
+                    while let Some(v) = self.parse_value()? {
                         arr.push(v);
                     }
                     let arr = Arr { arr };
-                    self.parse_op(Box::new(arr), tokens, pos)
+                    self.parse_op(Box::new(arr))
                 }
-                TokenKind::Comma => match self.parse_value(tokens, pos)? {
+                TokenKind::Comma => match self.parse_value()? {
                     Some(v) => Ok(Some(v)),
                     None => Err(anyhow!("value required after comma: {:?}", tok)),
                 },
                 TokenKind::OpenParen => {
                     let op = self
-                        .parse_value(tokens, pos)?
+                        .parse_value()?
                         .map_or_else(|| Err(anyhow!("no value between ()")), Ok)?;
-                    self.parse_op(op, tokens, pos)
+                    self.parse_op(op)
                 }
                 TokenKind::CloseParen => Err(anyhow!("no value between ()")),
                 TokenKind::CloseBracket => Ok(None),
@@ -219,108 +202,103 @@ impl<'a> Parser<'a> {
     }
 
     #[allow(clippy::too_many_lines)]
-    fn parse_op(
-        &self,
-        value: BoxedExpression,
-        tokens: &[Token],
-        pos: &mut usize,
-    ) -> anyhow::Result<Option<BoxedExpression>> {
-        if let Some(tok) = tokens.get(*pos) {
-            *pos += 1;
+    fn parse_op(&mut self, value: BoxedExpression) -> anyhow::Result<Option<BoxedExpression>> {
+        if let Some(tok) = self.tokenizer.next() {
+            let tok = tok?;
             match tok.kind {
                 TokenKind::In => {
                     let right = self
-                        .parse_value(tokens, pos)?
+                        .parse_value()?
                         .map_or_else(|| Err(anyhow!("no value after IN")), Ok)?;
                     Ok(Some(Box::new(In { left: value, right })))
                 }
                 TokenKind::Contains => {
                     let right = self
-                        .parse_value(tokens, pos)?
+                        .parse_value()?
                         .map_or_else(|| Err(anyhow!("no value after CONTAINS")), Ok)?;
                     Ok(Some(Box::new(Contains { left: value, right })))
                 }
                 TokenKind::StartsWith => {
                     let right = self
-                        .parse_value(tokens, pos)?
+                        .parse_value()?
                         .map_or_else(|| Err(anyhow!("no value after STARTSWITH")), Ok)?;
                     Ok(Some(Box::new(StartsWith { left: value, right })))
                 }
                 TokenKind::EndsWith => {
                     let right = self
-                        .parse_value(tokens, pos)?
+                        .parse_value()?
                         .map_or_else(|| Err(anyhow!("no value after ENDSWITH")), Ok)?;
                     Ok(Some(Box::new(EndsWith { left: value, right })))
                 }
                 TokenKind::And => {
                     let right = self
-                        .parse_value(tokens, pos)?
+                        .parse_value()?
                         .map_or_else(|| Err(anyhow!("no value after AND")), Ok)?;
                     Ok(Some(Box::new(And { left: value, right })))
                 }
                 TokenKind::Or => {
                     let right = self
-                        .parse_value(tokens, pos)?
+                        .parse_value()?
                         .map_or_else(|| Err(anyhow!("no value after OR")), Ok)?;
                     Ok(Some(Box::new(Or { left: value, right })))
                 }
                 TokenKind::Gt => {
                     let right = self
-                        .parse_value(tokens, pos)?
+                        .parse_value()?
                         .map_or_else(|| Err(anyhow!("no value after >")), Ok)?;
                     Ok(Some(Box::new(Gt { left: value, right })))
                 }
                 TokenKind::Gte => {
                     let right = self
-                        .parse_value(tokens, pos)?
+                        .parse_value()?
                         .map_or_else(|| Err(anyhow!("no value after >=")), Ok)?;
                     Ok(Some(Box::new(Gte { left: value, right })))
                 }
                 TokenKind::Lt => {
                     let right = self
-                        .parse_value(tokens, pos)?
+                        .parse_value()?
                         .map_or_else(|| Err(anyhow!("no value after <")), Ok)?;
                     Ok(Some(Box::new(Lt { left: value, right })))
                 }
                 TokenKind::Lte => {
                     let right = self
-                        .parse_value(tokens, pos)?
+                        .parse_value()?
                         .map_or_else(|| Err(anyhow!("no value after <=")), Ok)?;
                     Ok(Some(Box::new(Lte { left: value, right })))
                 }
                 TokenKind::Equals => {
                     let right = self
-                        .parse_value(tokens, pos)?
+                        .parse_value()?
                         .map_or_else(|| Err(anyhow!("no value after ==")), Ok)?;
                     Ok(Some(Box::new(Eq { left: value, right })))
                 }
                 TokenKind::Add => {
                     let right = self
-                        .parse_value(tokens, pos)?
+                        .parse_value()?
                         .map_or_else(|| Err(anyhow!("no value after +")), Ok)?;
                     Ok(Some(Box::new(Add { left: value, right })))
                 }
                 TokenKind::Subtract => {
                     let right = self
-                        .parse_value(tokens, pos)?
+                        .parse_value()?
                         .map_or_else(|| Err(anyhow!("no value after -")), Ok)?;
                     Ok(Some(Box::new(Sub { left: value, right })))
                 }
                 TokenKind::Multiply => {
                     let right = self
-                        .parse_value(tokens, pos)?
+                        .parse_value()?
                         .map_or_else(|| Err(anyhow!("no value after *")), Ok)?;
                     Ok(Some(Box::new(Mult { left: value, right })))
                 }
                 TokenKind::Divide => {
                     let right = self
-                        .parse_value(tokens, pos)?
+                        .parse_value()?
                         .map_or_else(|| Err(anyhow!("no value after /")), Ok)?;
                     Ok(Some(Box::new(Div { left: value, right })))
                 }
                 TokenKind::Not => {
                     let op = self
-                        .parse_op(value, tokens, pos)
+                        .parse_op(value)
                         .map_or_else(|_| Err(anyhow!("invalid operation after !")), Ok)?;
                     if let Some(value) = op {
                         let n = Not { value };
@@ -331,9 +309,9 @@ impl<'a> Parser<'a> {
                 }
                 TokenKind::OpenParen => {
                     let op = self
-                        .parse_value(tokens, pos)?
+                        .parse_value()?
                         .map_or_else(|| Err(anyhow!("no value between ()")), Ok)?;
-                    self.parse_op(op, tokens, pos)
+                    self.parse_op(op)
                 }
                 TokenKind::CloseBracket | TokenKind::CloseParen => Ok(Some(value)),
                 _ => Err(anyhow!(
@@ -354,9 +332,9 @@ struct Add {
 }
 
 impl Expression for Add {
-    fn calculate(&self, src: &[u8]) -> Result<Value> {
-        let left = self.left.calculate(src)?;
-        let right = self.right.calculate(src)?;
+    fn calculate(&self, json: &[u8]) -> Result<Value> {
+        let left = self.left.calculate(json)?;
+        let right = self.right.calculate(json)?;
 
         match (left, right) {
             (Value::String(s1), Value::String(ref s2)) => Ok(Value::String(s1 + s2)),
@@ -380,9 +358,9 @@ struct Sub {
 }
 
 impl Expression for Sub {
-    fn calculate(&self, src: &[u8]) -> Result<Value> {
-        let left = self.left.calculate(src)?;
-        let right = self.right.calculate(src)?;
+    fn calculate(&self, json: &[u8]) -> Result<Value> {
+        let left = self.left.calculate(json)?;
+        let right = self.right.calculate(json)?;
 
         match (left, right) {
             (Value::Number(n1), Value::Number(n2)) => Ok(Value::Number(n1 - n2)),
@@ -401,9 +379,9 @@ struct Mult {
 }
 
 impl Expression for Mult {
-    fn calculate(&self, src: &[u8]) -> Result<Value> {
-        let left = self.left.calculate(src)?;
-        let right = self.right.calculate(src)?;
+    fn calculate(&self, json: &[u8]) -> Result<Value> {
+        let left = self.left.calculate(json)?;
+        let right = self.right.calculate(json)?;
 
         match (left, right) {
             (Value::Number(n1), Value::Number(n2)) => Ok(Value::Number(n1 * n2)),
@@ -422,9 +400,9 @@ struct Div {
 }
 
 impl Expression for Div {
-    fn calculate(&self, src: &[u8]) -> Result<Value> {
-        let left = self.left.calculate(src)?;
-        let right = self.right.calculate(src)?;
+    fn calculate(&self, json: &[u8]) -> Result<Value> {
+        let left = self.left.calculate(json)?;
+        let right = self.right.calculate(json)?;
 
         match (left, right) {
             (Value::Number(n1), Value::Number(n2)) => Ok(Value::Number(n1 / n2)),
@@ -443,9 +421,9 @@ struct Eq {
 }
 
 impl Expression for Eq {
-    fn calculate(&self, src: &[u8]) -> Result<Value> {
-        let left = self.left.calculate(src)?;
-        let right = self.right.calculate(src)?;
+    fn calculate(&self, json: &[u8]) -> Result<Value> {
+        let left = self.left.calculate(json)?;
+        let right = self.right.calculate(json)?;
         Ok(Value::Bool(left == right))
     }
 }
@@ -457,9 +435,9 @@ struct Gt {
 }
 
 impl Expression for Gt {
-    fn calculate(&self, src: &[u8]) -> Result<Value> {
-        let left = self.left.calculate(src)?;
-        let right = self.right.calculate(src)?;
+    fn calculate(&self, json: &[u8]) -> Result<Value> {
+        let left = self.left.calculate(json)?;
+        let right = self.right.calculate(json)?;
 
         match (left, right) {
             (Value::String(s1), Value::String(s2)) => Ok(Value::Bool(s1 > s2)),
@@ -479,9 +457,9 @@ struct Gte {
 }
 
 impl Expression for Gte {
-    fn calculate(&self, src: &[u8]) -> Result<Value> {
-        let left = self.left.calculate(src)?;
-        let right = self.right.calculate(src)?;
+    fn calculate(&self, json: &[u8]) -> Result<Value> {
+        let left = self.left.calculate(json)?;
+        let right = self.right.calculate(json)?;
 
         match (left, right) {
             (Value::String(s1), Value::String(s2)) => Ok(Value::Bool(s1 >= s2)),
@@ -501,9 +479,9 @@ struct Lt {
 }
 
 impl Expression for Lt {
-    fn calculate(&self, src: &[u8]) -> Result<Value> {
-        let left = self.left.calculate(src)?;
-        let right = self.right.calculate(src)?;
+    fn calculate(&self, json: &[u8]) -> Result<Value> {
+        let left = self.left.calculate(json)?;
+        let right = self.right.calculate(json)?;
 
         match (left, right) {
             (Value::String(s1), Value::String(s2)) => Ok(Value::Bool(s1 < s2)),
@@ -523,9 +501,9 @@ struct Lte {
 }
 
 impl Expression for Lte {
-    fn calculate(&self, src: &[u8]) -> Result<Value> {
-        let left = self.left.calculate(src)?;
-        let right = self.right.calculate(src)?;
+    fn calculate(&self, json: &[u8]) -> Result<Value> {
+        let left = self.left.calculate(json)?;
+        let right = self.right.calculate(json)?;
 
         match (left, right) {
             (Value::String(s1), Value::String(s2)) => Ok(Value::Bool(s1 <= s2)),
@@ -544,8 +522,8 @@ struct Not {
 }
 
 impl Expression for Not {
-    fn calculate(&self, src: &[u8]) -> Result<Value> {
-        let v = self.value.calculate(src)?;
+    fn calculate(&self, json: &[u8]) -> Result<Value> {
+        let v = self.value.calculate(json)?;
         match v {
             Value::Bool(b) => Ok(Value::Bool(!b)),
             v => Err(Error::UnsupportedTypeComparison(format!("{:?} for !", v))),
@@ -559,8 +537,8 @@ struct Ident {
 }
 
 impl Expression for Ident {
-    fn calculate(&self, src: &[u8]) -> Result<Value> {
-        Ok(unsafe { gjson::get_bytes(src, &self.ident).into() })
+    fn calculate(&self, json: &[u8]) -> Result<Value> {
+        Ok(unsafe { gjson::get_bytes(json, &self.ident).into() })
     }
 }
 
@@ -613,9 +591,9 @@ struct Or {
 }
 
 impl Expression for Or {
-    fn calculate(&self, src: &[u8]) -> Result<Value> {
-        let left = self.left.calculate(src)?;
-        let right = self.right.calculate(src)?;
+    fn calculate(&self, json: &[u8]) -> Result<Value> {
+        let left = self.left.calculate(json)?;
+        let right = self.right.calculate(json)?;
 
         match (left, right) {
             (Value::Bool(b1), Value::Bool(b2)) => Ok(Value::Bool(b1 || b2)),
@@ -634,9 +612,9 @@ struct And {
 }
 
 impl Expression for And {
-    fn calculate(&self, src: &[u8]) -> Result<Value> {
-        let left = self.left.calculate(src)?;
-        let right = self.right.calculate(src)?;
+    fn calculate(&self, json: &[u8]) -> Result<Value> {
+        let left = self.left.calculate(json)?;
+        let right = self.right.calculate(json)?;
 
         match (left, right) {
             (Value::Bool(b1), Value::Bool(b2)) => Ok(Value::Bool(b1 && b2)),
@@ -655,9 +633,9 @@ struct Contains {
 }
 
 impl Expression for Contains {
-    fn calculate(&self, src: &[u8]) -> Result<Value> {
-        let left = self.left.calculate(src)?;
-        let right = self.right.calculate(src)?;
+    fn calculate(&self, json: &[u8]) -> Result<Value> {
+        let left = self.left.calculate(json)?;
+        let right = self.right.calculate(json)?;
         match (left, right) {
             (Value::String(s1), Value::String(s2)) => Ok(Value::Bool(s1.contains(&s2))),
             (l, r) => Err(Error::UnsupportedTypeComparison(format!(
@@ -675,9 +653,9 @@ struct StartsWith {
 }
 
 impl Expression for StartsWith {
-    fn calculate(&self, src: &[u8]) -> Result<Value> {
-        let left = self.left.calculate(src)?;
-        let right = self.right.calculate(src)?;
+    fn calculate(&self, json: &[u8]) -> Result<Value> {
+        let left = self.left.calculate(json)?;
+        let right = self.right.calculate(json)?;
 
         match (left, right) {
             (Value::String(s1), Value::String(s2)) => Ok(Value::Bool(s1.starts_with(&s2))),
@@ -696,9 +674,9 @@ struct EndsWith {
 }
 
 impl Expression for EndsWith {
-    fn calculate(&self, src: &[u8]) -> Result<Value> {
-        let left = self.left.calculate(src)?;
-        let right = self.right.calculate(src)?;
+    fn calculate(&self, json: &[u8]) -> Result<Value> {
+        let left = self.left.calculate(json)?;
+        let right = self.right.calculate(json)?;
 
         match (left, right) {
             (Value::String(s1), Value::String(s2)) => Ok(Value::Bool(s1.ends_with(&s2))),
@@ -717,9 +695,9 @@ struct In {
 }
 
 impl Expression for In {
-    fn calculate(&self, src: &[u8]) -> Result<Value> {
-        let left = self.left.calculate(src)?;
-        let right = self.right.calculate(src)?;
+    fn calculate(&self, json: &[u8]) -> Result<Value> {
+        let left = self.left.calculate(json)?;
+        let right = self.right.calculate(json)?;
 
         match (left, right) {
             (v, Value::Array(a)) => Ok(Value::Bool(a.contains(&v))),
@@ -737,10 +715,10 @@ struct Arr {
 }
 
 impl Expression for Arr {
-    fn calculate(&self, src: &[u8]) -> Result<Value> {
+    fn calculate(&self, json: &[u8]) -> Result<Value> {
         let mut arr = Vec::new();
         for e in &self.arr {
-            arr.push(e.calculate(src)?);
+            arr.push(e.calculate(json)?);
         }
         Ok(Value::Array(arr))
     }
