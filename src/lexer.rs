@@ -35,9 +35,9 @@ use thiserror::Error;
 /// The lexed token.
 #[derive(Debug, PartialEq)]
 pub struct Token {
-    pub kind: TokenKind,
     pub start: u32,
-    pub end: u32,
+    pub len: u16,
+    pub kind: TokenKind,
 }
 
 /// The kind of `Token`.
@@ -105,7 +105,7 @@ impl<'a> Tokenizer<'a> {
             let token = Token {
                 kind,
                 start: self.pos,
-                end: self.pos + bytes_read,
+                len: bytes_read,
             };
             self.chomp(bytes_read);
             Ok(Some(token))
@@ -117,9 +117,9 @@ impl<'a> Tokenizer<'a> {
         self.chomp(skipped);
     }
 
-    fn chomp(&mut self, len: u32) {
+    fn chomp(&mut self, len: u16) {
         self.remaining = &self.remaining[len as usize..];
-        self.pos += len;
+        self.pos += len as u32;
     }
 }
 
@@ -132,13 +132,13 @@ impl Iterator for Tokenizer<'_> {
 }
 
 #[inline]
-fn skip_whitespace(data: &[u8]) -> u32 {
+fn skip_whitespace(data: &[u8]) -> u16 {
     take_while(data, |c| c.is_ascii_whitespace()).unwrap_or(0)
 }
 
 #[inline]
 /// Consumes bytes while a predicate evaluates to true.
-fn take_while<F>(data: &[u8], mut pred: F) -> Option<u32>
+fn take_while<F>(data: &[u8], mut pred: F) -> Option<u16>
 where
     F: FnMut(u8) -> bool,
 {
@@ -184,7 +184,7 @@ pub enum Error {
 }
 
 /// Try to lex a single token from the input stream.
-fn tokenize_single_token(data: &[u8]) -> Result<(TokenKind, u32)> {
+fn tokenize_single_token(data: &[u8]) -> Result<(TokenKind, u16)> {
     let b = match data.get(0) {
         Some(b) => b,
         None => panic!("invalid data passed"),
@@ -225,7 +225,7 @@ fn tokenize_single_token(data: &[u8]) -> Result<(TokenKind, u32)> {
 }
 
 #[inline]
-fn tokenize_string(data: &[u8], quote: u8) -> Result<(TokenKind, u32)> {
+fn tokenize_string(data: &[u8], quote: u8) -> Result<(TokenKind, u16)> {
     let mut last_backslash = false;
     let mut ended_with_terminator = false;
 
@@ -270,7 +270,7 @@ fn tokenize_string(data: &[u8], quote: u8) -> Result<(TokenKind, u32)> {
 }
 
 #[inline]
-fn tokenize_identifier(data: &[u8]) -> Result<(TokenKind, u32)> {
+fn tokenize_identifier(data: &[u8]) -> Result<(TokenKind, u16)> {
     match take_while(&data[1..], |c| {
         !c.is_ascii_whitespace() && c != b')' && c != b']'
     }) {
@@ -282,7 +282,7 @@ fn tokenize_identifier(data: &[u8]) -> Result<(TokenKind, u32)> {
 }
 
 #[inline]
-fn tokenize_bool(data: &[u8]) -> Result<(TokenKind, u32)> {
+fn tokenize_bool(data: &[u8]) -> Result<(TokenKind, u16)> {
     match take_while(data, |c| c.is_ascii_alphabetic()) {
         Some(end) => match data[..end as usize] {
             [b't', b'r', b'u', b'e'] => Ok((TokenKind::BooleanTrue, end)),
@@ -298,7 +298,7 @@ fn tokenize_bool(data: &[u8]) -> Result<(TokenKind, u32)> {
 }
 
 #[inline]
-fn tokenize_keyword(data: &[u8], keyword: &[u8], kind: TokenKind) -> Result<(TokenKind, u32)> {
+fn tokenize_keyword(data: &[u8], keyword: &[u8], kind: TokenKind) -> Result<(TokenKind, u16)> {
     match take_while(data, |c| !c.is_ascii_whitespace()) {
         Some(end) if &data[..end as usize] == keyword && data.len() > keyword.len() => {
             Ok((kind, end))
@@ -310,7 +310,7 @@ fn tokenize_keyword(data: &[u8], keyword: &[u8], kind: TokenKind) -> Result<(Tok
 }
 
 #[inline]
-fn tokenize_null(data: &[u8]) -> Result<(TokenKind, u32)> {
+fn tokenize_null(data: &[u8]) -> Result<(TokenKind, u16)> {
     match take_while(data, |c| c.is_ascii_alphabetic()) {
         Some(end) if data[..end as usize] == [b'N', b'U', b'L', b'L'] => Ok((TokenKind::Null, end)),
         _ => Err(Error::InvalidKeyword(
@@ -320,7 +320,7 @@ fn tokenize_null(data: &[u8]) -> Result<(TokenKind, u32)> {
 }
 
 #[inline]
-fn tokenize_number(data: &[u8]) -> Result<(TokenKind, u32)> {
+fn tokenize_number(data: &[u8]) -> Result<(TokenKind, u16)> {
     let mut dot_seen = false;
     let mut bad_number = false;
 
@@ -381,7 +381,7 @@ mod tests {
         Token {
             kind: TokenKind::BooleanTrue,
             start: 0,
-            end: 4
+            len: 4
         }
     );
     lex_test!(
@@ -390,7 +390,7 @@ mod tests {
         Token {
             kind: TokenKind::BooleanFalse,
             start: 0,
-            end: 5
+            len: 5
         }
     );
     lex_test!(
@@ -399,7 +399,7 @@ mod tests {
         Token {
             kind: TokenKind::Number,
             start: 0,
-            end: 6
+            len: 6
         }
     );
     lex_test!(
@@ -408,7 +408,7 @@ mod tests {
         Token {
             kind: TokenKind::Number,
             start: 0,
-            end: 5
+            len: 5
         }
     );
     lex_test!(
@@ -417,7 +417,7 @@ mod tests {
         Token {
             kind: TokenKind::Number,
             start: 0,
-            end: 3
+            len: 3
         }
     );
     lex_test!(
@@ -431,7 +431,7 @@ mod tests {
         Token {
             kind: TokenKind::Identifier,
             start: 0,
-            end: 22
+            len: 22
         }
     );
     lex_test!(
@@ -445,7 +445,7 @@ mod tests {
         Token {
             kind: TokenKind::QuotedString,
             start: 0,
-            end: 8
+            len: 8
         }
     );
     lex_test!(
@@ -454,7 +454,7 @@ mod tests {
         Token {
             kind: TokenKind::QuotedString,
             start: 0,
-            end: 2
+            len: 2
         }
     );
     lex_test!(
@@ -473,7 +473,7 @@ mod tests {
         Token {
             kind: TokenKind::Equals,
             start: 0,
-            end: 1
+            len: 1
         }
     );
     lex_test!(
@@ -482,7 +482,7 @@ mod tests {
         Token {
             kind: TokenKind::Equals,
             start: 0,
-            end: 2
+            len: 2
         }
     );
     lex_test!(
@@ -491,7 +491,7 @@ mod tests {
         Token {
             kind: TokenKind::Add,
             start: 0,
-            end: 1
+            len: 1
         }
     );
     lex_test!(
@@ -500,7 +500,7 @@ mod tests {
         Token {
             kind: TokenKind::Subtract,
             start: 0,
-            end: 1
+            len: 1
         }
     );
     lex_test!(
@@ -509,7 +509,7 @@ mod tests {
         Token {
             kind: TokenKind::Multiply,
             start: 0,
-            end: 1
+            len: 1
         }
     );
     lex_test!(
@@ -518,7 +518,7 @@ mod tests {
         Token {
             kind: TokenKind::Divide,
             start: 0,
-            end: 1
+            len: 1
         }
     );
     lex_test!(
@@ -527,7 +527,7 @@ mod tests {
         Token {
             kind: TokenKind::Gt,
             start: 0,
-            end: 1
+            len: 1
         }
     );
     lex_test!(
@@ -536,7 +536,7 @@ mod tests {
         Token {
             kind: TokenKind::Gte,
             start: 0,
-            end: 2
+            len: 2
         }
     );
     lex_test!(
@@ -545,7 +545,7 @@ mod tests {
         Token {
             kind: TokenKind::Lt,
             start: 0,
-            end: 1
+            len: 1
         }
     );
     lex_test!(
@@ -554,7 +554,7 @@ mod tests {
         Token {
             kind: TokenKind::Lte,
             start: 0,
-            end: 2
+            len: 2
         }
     );
     lex_test!(
@@ -563,7 +563,7 @@ mod tests {
         Token {
             kind: TokenKind::OpenParen,
             start: 0,
-            end: 1
+            len: 1
         }
     );
     lex_test!(
@@ -572,7 +572,7 @@ mod tests {
         Token {
             kind: TokenKind::CloseParen,
             start: 0,
-            end: 1
+            len: 1
         }
     );
     lex_test!(
@@ -581,7 +581,7 @@ mod tests {
         Token {
             kind: TokenKind::OpenBracket,
             start: 0,
-            end: 1
+            len: 1
         }
     );
     lex_test!(
@@ -590,7 +590,7 @@ mod tests {
         Token {
             kind: TokenKind::CloseBracket,
             start: 0,
-            end: 1
+            len: 1
         }
     );
     lex_test!(
@@ -599,7 +599,7 @@ mod tests {
         Token {
             kind: TokenKind::Comma,
             start: 0,
-            end: 1
+            len: 1
         }
     );
 
@@ -610,17 +610,17 @@ mod tests {
         Token {
             kind: TokenKind::Identifier,
             start: 0,
-            end: 7
+            len: 7
         },
         Token {
             kind: TokenKind::Add,
             start: 8,
-            end: 9
+            len: 1
         },
         Token {
             kind: TokenKind::Identifier,
             start: 10,
-            end: 17
+            len: 7
         }
     );
     lex_test!(
@@ -629,17 +629,17 @@ mod tests {
         Token {
             kind: TokenKind::Identifier,
             start: 0,
-            end: 7
+            len: 7
         },
         Token {
             kind: TokenKind::Subtract,
             start: 8,
-            end: 9
+            len: 1
         },
         Token {
             kind: TokenKind::Identifier,
             start: 10,
-            end: 17
+            len: 7
         }
     );
     lex_test!(
@@ -648,37 +648,37 @@ mod tests {
         Token {
             kind: TokenKind::Identifier,
             start: 0,
-            end: 7
+            len: 7
         },
         Token {
             kind: TokenKind::Subtract,
             start: 8,
-            end: 9
+            len: 1
         },
         Token {
             kind: TokenKind::OpenParen,
             start: 10,
-            end: 11
+            len: 1
         },
         Token {
             kind: TokenKind::Identifier,
             start: 12,
-            end: 19
+            len: 7
         },
         Token {
             kind: TokenKind::Add,
             start: 20,
-            end: 21
+            len: 1
         },
         Token {
             kind: TokenKind::Identifier,
             start: 22,
-            end: 29
+            len: 7
         },
         Token {
             kind: TokenKind::CloseParen,
             start: 30,
-            end: 31
+            len: 1
         }
     );
 
@@ -688,7 +688,7 @@ mod tests {
         Token {
             kind: TokenKind::Or,
             start: 0,
-            end: 2
+            len: 2
         }
     );
     lex_test!(FAIL: parse_bad_or, "|", Error::UnsupportedCharacter(b'|'));
@@ -699,7 +699,7 @@ mod tests {
         Token {
             kind: TokenKind::In,
             start: 1,
-            end: 3
+            len: 2
         }
     );
     lex_test!(
@@ -714,7 +714,7 @@ mod tests {
         Token {
             kind: TokenKind::Contains,
             start: 1,
-            end: 9
+            len: 8
         }
     );
     lex_test!(
@@ -729,7 +729,7 @@ mod tests {
         Token {
             kind: TokenKind::StartsWith,
             start: 1,
-            end: 11
+            len: 10
         }
     );
     lex_test!(
@@ -744,7 +744,7 @@ mod tests {
         Token {
             kind: TokenKind::EndsWith,
             start: 1,
-            end: 9
+            len: 8
         }
     );
     lex_test!(
@@ -759,7 +759,7 @@ mod tests {
         Token {
             kind: TokenKind::Null,
             start: 0,
-            end: 4
+            len: 4
         }
     );
     lex_test!(
@@ -773,7 +773,7 @@ mod tests {
         Token {
             kind: TokenKind::And,
             start: 0,
-            end: 2
+            len: 2
         }
     );
     lex_test!(FAIL: parse_bad_and, "&", Error::UnsupportedCharacter(b'&'));
@@ -783,7 +783,7 @@ mod tests {
         Token {
             kind: TokenKind::Not,
             start: 0,
-            end: 1
+            len: 1
         }
     );
 }
