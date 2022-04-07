@@ -1,13 +1,53 @@
-//! Expressions support most mathematical and string expressions see [here](https://github.com/rust-playground/ksql/LEXER.md) for details of the lexer support and rules.
+//! #### Syntax & Rules
+//!
+//! | Token          | Example                  | Syntax Rules                                                                                                                                                                              |
+//! |----------------|--------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+//! | `Equals`       | `==`                     | supports both `==` and `=`.                                                                                                                                                               |
+//! | `Add`          | `+`                      | N/A                                                                                                                                                                                       |
+//! | `Subtract`     | `-`                      | N/A                                                                                                                                                                                       |
+//! | `Multiply`     | `*`                      | N/A                                                                                                                                                                                       |
+//! | `Divide`       | `/`                      | N/A                                                                                                                                                                                       |
+//! | `Gt`           | `>`                      | N/A                                                                                                                                                                                       |
+//! | `Gte`          | `>=`                     | N/A                                                                                                                                                                                       |
+//! | `Lt`           | `<`                      | N/A                                                                                                                                                                                       |
+//! | `Lte`          | `<=`                     | N/A                                                                                                                                                                                       |
+//! | `OpenParen`    | `(`                      | N/A                                                                                                                                                                                       |
+//! | `CloseParen`   | `)`                      | N/A                                                                                                                                                                                       |
+//! | `OpenBracket`  | `[`                      | N/A                                                                                                                                                                                       |
+//! | `CloseBracket` | `]`                      | N/A                                                                                                                                                                                       |
+//! | `Comma`        | `,`                      | N/A                                                                                                                                                                                       |
+//! | `QuotedString` | `"sample text"`          | Must start and end with an unescaped `"` character                                                                                                                                        |
+//! | `Number`       | `123.45`                 | Must start and end with a valid `0-9` digit.                                                                                                                                              |
+//! | `BoolenTrue`   | `true`                   | Accepts `true` as a boolean only.                                                                                                                                                         |
+//! | `BoolenFalse`  | `false`                  | Accepts `false` as a boolean only.                                                                                                                                                        |
+//! | `Identifier`   | `.identifier`            | Starts with a `.` and ends with whitespace blank space. This crate currently uses [gjson](https://github.com/tidwall/gjson.rs) and so the full gjson syntax for identifiers is supported. |
+//! | `And`          | `&&`                     | N/A                                                                                                                                                                                       |
+//! | `Not`          | `!`                      | Must be before Boolean identifier or expression or be followed by an operation                                                                                                            |
+//! | `Or`           | <code>&vert;&vert;<code> | N/A                                                                                                                                                                                       |
+//! | `Contains`     | `CONTAINS `              | Ends with whitespace blank space.                                                                                                                                                         |
+//! | `In`           | `IN `                    | Ends with whitespace blank space.                                                                                                                                                         |
+//! | `StartsWith`   | `STARTSWITH `            | Ends with whitespace blank space.                                                                                                                                                         |
+//! | `EndsWith`     | `ENDSWITH `              | Ends with whitespace blank space.                                                                                                                                                         |
+//! | `NULL`         | `NULL`                   | N/A                                                                                                                                                                                       |
 
 use thiserror::Error;
 
+/// The lexed token.
 #[derive(Debug, PartialEq)]
-pub enum Token {
-    Identifier(String),
-    String(String),
-    Number(f64),
-    Boolean(bool),
+pub struct Token {
+    pub kind: TokenKind,
+    pub start: u32,
+    pub end: u32,
+}
+
+/// The kind of `Token`.
+#[derive(Debug, PartialEq)]
+pub enum TokenKind {
+    Identifier,
+    QuotedString,
+    Number,
+    BooleanTrue,
+    BooleanFalse,
     Null,
     Equals,
     Add,
@@ -18,6 +58,7 @@ pub enum Token {
     Gte,
     Lt,
     Lte,
+    Not,
     And,
     Or,
     Contains,
@@ -31,336 +72,73 @@ pub enum Token {
     CloseParen,
 }
 
-/// Try to lex a single token from the input stream.
-pub fn tokenize_single_token(data: &[u8]) -> Result<(Token, usize)> {
-    let b = match data.get(0) {
-        Some(b) => b,
-        None => panic!("invalid data passed"),
-    };
-
-    let (token, end) = match b {
-        b'=' => (Token::Equals, 1),
-        b'+' => (Token::Add, 1),
-        b'-' => (Token::Subtract, 1),
-        b'*' => (Token::Multiply, 1),
-        b'/' => (Token::Divide, 1),
-        b'>' if data.get(1) == Some(&b'=') => (Token::Gte, 2),
-        b'>' => (Token::Gt, 1),
-        b'<' if data.get(1) == Some(&b'=') => (Token::Lte, 2),
-        b'<' => (Token::Lt, 1),
-        b'(' => (Token::OpenParen, 1),
-        b')' => (Token::CloseParen, 1),
-        b'[' => (Token::OpenBracket, 1),
-        b']' => (Token::CloseBracket, 1),
-        b',' => (Token::Comma, 1),
-        b'"' => tokenize_string_double_quote(data)?,
-        b'\'' => tokenize_string_single_quote(data)?,
-        b'.' => tokenize_identifier(data)?,
-        b't' | b'f' => tokenize_bool(data)?,
-        b'A' => tokenize_and(data)?,
-        b'O' => tokenize_or(data)?,
-        b'C' => tokenize_contains(data)?,
-        b'I' => tokenize_in(data)?,
-        b'S' => tokenize_starts_with(data)?,
-        b'E' => tokenize_ends_with(data)?,
-        b'N' => tokenize_null(data)?,
-        c if c.is_ascii_digit() => tokenize_number(data)?,
-        _ => return Err(Error::UnsupportedCharacter(*b)),
-    };
-    Ok((token, end))
+/// A lexer for the KSQL expression syntax.
+pub struct Tokenizer<'a> {
+    pos: u32,
+    remaining: &'a [u8],
 }
 
-#[inline]
-fn tokenize_and(data: &[u8]) -> Result<(Token, usize)> {
-    match take_while(data, |c| c != b' ') {
-        Some((_, end)) => match String::from_utf8_lossy(&data[..end]).as_ref() {
-            "AND" if data.len() > 3 => Ok((Token::And, end)),
-            _ => Err(Error::InvalidOperator(
-                String::from_utf8_lossy(data).to_string(),
-            )),
-        },
-        None => Err(Error::InvalidOperator(
-            String::from_utf8_lossy(data).to_string(),
-        )),
+impl<'a> Tokenizer<'a> {
+    /// Creates a new `Tokenizer` to iterate over tokens
+    #[inline]
+    #[must_use]
+    pub fn new(src: &'a str) -> Self {
+        Self::new_bytes(src.as_bytes())
+    }
+
+    /// Creates a new `Tokenizer` to iterate over tokens using bytes as the source.
+    #[must_use]
+    pub fn new_bytes(src: &'a [u8]) -> Self {
+        Self {
+            pos: 0,
+            remaining: src,
+        }
+    }
+
+    fn next_token(&mut self) -> Result<Option<Token>> {
+        self.skip_whitespace();
+
+        if self.remaining.is_empty() {
+            Ok(None)
+        } else {
+            let (kind, bytes_read) = tokenize_single_token(self.remaining)?;
+            let token = Token {
+                kind,
+                start: self.pos,
+                end: self.pos + bytes_read,
+            };
+            self.chomp(bytes_read);
+            Ok(Some(token))
+        }
+    }
+
+    fn skip_whitespace(&mut self) {
+        let skipped = skip_whitespace(self.remaining);
+        self.chomp(skipped);
+    }
+
+    fn chomp(&mut self, len: u32) {
+        self.remaining = &self.remaining[len as usize..];
+        self.pos += len;
+    }
+}
+
+impl Iterator for Tokenizer<'_> {
+    type Item = Result<Token>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.next_token().transpose()
     }
 }
 
 #[inline]
-fn tokenize_null(data: &[u8]) -> Result<(Token, usize)> {
-    match take_while(data, |c| c.is_ascii_alphabetic()) {
-        Some((_, end)) => match String::from_utf8_lossy(&data[..end]).as_ref() {
-            "NULL" => Ok((Token::Null, end)),
-            _ => Err(Error::InvalidOperator(
-                String::from_utf8_lossy(data).to_string(),
-            )),
-        },
-        None => Err(Error::InvalidOperator(
-            String::from_utf8_lossy(data).to_string(),
-        )),
-    }
-}
-
-#[inline]
-fn tokenize_ends_with(data: &[u8]) -> Result<(Token, usize)> {
-    match take_while(data, |c| c != b' ') {
-        Some((_, end)) => match String::from_utf8_lossy(&data[..end]).as_ref() {
-            "ENDSWITH" if data.len() > 8 => Ok((Token::EndsWith, end)),
-            _ => Err(Error::InvalidOperator(
-                String::from_utf8_lossy(data).to_string(),
-            )),
-        },
-        None => Err(Error::InvalidOperator(
-            String::from_utf8_lossy(data).to_string(),
-        )),
-    }
-}
-
-#[inline]
-fn tokenize_starts_with(data: &[u8]) -> Result<(Token, usize)> {
-    match take_while(data, |c| c != b' ') {
-        Some((_, end)) => match String::from_utf8_lossy(&data[..end]).as_ref() {
-            "STARTSWITH" if data.len() > 10 => Ok((Token::StartsWith, end)),
-            _ => Err(Error::InvalidOperator(
-                String::from_utf8_lossy(data).to_string(),
-            )),
-        },
-        None => Err(Error::InvalidOperator(
-            String::from_utf8_lossy(data).to_string(),
-        )),
-    }
-}
-
-#[inline]
-fn tokenize_in(data: &[u8]) -> Result<(Token, usize)> {
-    match take_while(data, |c| c != b' ') {
-        Some((_, end)) => match String::from_utf8_lossy(&data[..end]).as_ref() {
-            "IN" if data.len() > 2 => Ok((Token::In, end)),
-            _ => Err(Error::InvalidOperator(
-                String::from_utf8_lossy(data).to_string(),
-            )),
-        },
-        None => Err(Error::InvalidOperator(
-            String::from_utf8_lossy(data).to_string(),
-        )),
-    }
-}
-
-#[inline]
-fn tokenize_contains(data: &[u8]) -> Result<(Token, usize)> {
-    match take_while(data, |c| c != b' ') {
-        Some((_, end)) => match String::from_utf8_lossy(&data[..end]).as_ref() {
-            "CONTAINS" if data.len() > 8 => Ok((Token::Contains, end)),
-            _ => Err(Error::InvalidOperator(
-                String::from_utf8_lossy(data).to_string(),
-            )),
-        },
-        None => Err(Error::InvalidOperator(
-            String::from_utf8_lossy(data).to_string(),
-        )),
-    }
-}
-
-#[inline]
-fn tokenize_or(data: &[u8]) -> Result<(Token, usize)> {
-    match take_while(data, |c| c != b' ') {
-        Some((_, end)) => match String::from_utf8_lossy(&data[..end]).as_ref() {
-            "OR" if data.len() > 2 => Ok((Token::Or, end)),
-            _ => Err(Error::InvalidOperator(
-                String::from_utf8_lossy(data).to_string(),
-            )),
-        },
-        None => Err(Error::InvalidOperator(
-            String::from_utf8_lossy(data).to_string(),
-        )),
-    }
-}
-
-#[inline]
-fn tokenize_identifier(data: &[u8]) -> Result<(Token, usize)> {
-    match take_while(&data[1..], |c| c != b' ') {
-        Some((_, mut end)) => {
-            if data.len() > end {
-                end += 1;
-            }
-            Ok((
-                Token::Identifier(String::from_utf8_lossy(&data[1..end]).to_string()),
-                end,
-            ))
-        }
-        None => Err(Error::InvalidIdentifier(
-            String::from_utf8_lossy(data).to_string(),
-        )),
-    }
-}
-
-#[inline]
-fn tokenize_bool(data: &[u8]) -> Result<(Token, usize)> {
-    match take_while(data, |c| c.is_ascii_alphabetic()) {
-        Some((_, end)) => match String::from_utf8_lossy(&data[..end]).as_ref() {
-            "true" => Ok((Token::Boolean(true), end)),
-            "false" => Ok((Token::Boolean(false), end)),
-            _ => Err(Error::InvalidBool(
-                String::from_utf8_lossy(data).to_string(),
-            )),
-        },
-        None => Err(Error::InvalidBool(
-            String::from_utf8_lossy(data).to_string(),
-        )),
-    }
-}
-
-#[inline]
-fn tokenize_number(data: &[u8]) -> Result<(Token, usize)> {
-    let mut dot_seen = false;
-    let mut bad_number = false;
-
-    match take_while(data, |c| match c {
-        b'.' => {
-            if dot_seen {
-                bad_number = true;
-                false
-            } else {
-                dot_seen = true;
-                true
-            }
-        }
-        b'-' | b'+' => true,
-        c if c.is_ascii_alphanumeric() => true,
-        _ => false,
-    }) {
-        Some((_, end)) => {
-            if bad_number {
-                Err(Error::InvalidNumber(
-                    String::from_utf8_lossy(data).to_string(),
-                ))
-            } else {
-                match String::from_utf8_lossy(&data[..end]).parse::<f64>() {
-                    Ok(n) => Ok((Token::Number(n), end)),
-                    _ => Err(Error::InvalidNumber(
-                        String::from_utf8_lossy(&data[..end]).to_string(),
-                    )),
-                }
-            }
-        }
-        None => Err(Error::InvalidNumber(
-            String::from_utf8_lossy(data).to_string(),
-        )),
-    }
-}
-
-#[inline]
-fn tokenize_string_single_quote(data: &[u8]) -> Result<(Token, usize)> {
-    let mut last_backslash = false;
-    let mut ended_with_terminator = false;
-
-    match take_while(&data[1..], |c| match c {
-        b'\\' => {
-            last_backslash = true;
-            true
-        }
-        b'\'' => {
-            if last_backslash {
-                last_backslash = false;
-                true
-            } else {
-                ended_with_terminator = true;
-                false
-            }
-        }
-        _ => {
-            last_backslash = false;
-            true
-        }
-    }) {
-        Some((_, end)) => {
-            if !ended_with_terminator {
-                Err(Error::UnterminatedString(
-                    String::from_utf8_lossy(data).to_string(),
-                ))
-            } else {
-                Ok((
-                    Token::String(String::from_utf8_lossy(&data[1..end + 1]).to_string()),
-                    end + 2,
-                ))
-            }
-        }
-        None => {
-            if !ended_with_terminator || data.len() < 2 {
-                Err(Error::UnterminatedString(
-                    String::from_utf8_lossy(data).to_string(),
-                ))
-            } else {
-                Ok((
-                    Token::String(String::from_utf8_lossy(&data[..0]).to_string()),
-                    1,
-                ))
-            }
-        }
-    }
-}
-
-#[inline]
-fn tokenize_string_double_quote(data: &[u8]) -> Result<(Token, usize)> {
-    let mut last_backslash = false;
-    let mut ended_with_terminator = false;
-
-    match take_while(&data[1..], |c| match c {
-        b'\\' => {
-            last_backslash = true;
-            true
-        }
-        b'"' => {
-            if last_backslash {
-                last_backslash = false;
-                true
-            } else {
-                ended_with_terminator = true;
-                false
-            }
-        }
-        _ => {
-            last_backslash = false;
-            true
-        }
-    }) {
-        Some((_, end)) => {
-            if !ended_with_terminator {
-                Err(Error::UnterminatedString(
-                    String::from_utf8_lossy(data).to_string(),
-                ))
-            } else {
-                Ok((
-                    Token::String(String::from_utf8_lossy(&data[1..end + 1]).to_string()),
-                    end + 2,
-                ))
-            }
-        }
-        None => {
-            if !ended_with_terminator || data.len() < 2 {
-                Err(Error::UnterminatedString(
-                    String::from_utf8_lossy(data).to_string(),
-                ))
-            } else {
-                Ok((
-                    Token::String(String::from_utf8_lossy(&data[..0]).to_string()),
-                    1,
-                ))
-            }
-        }
-    }
-}
-
-#[inline]
-fn skip_whitespace(data: &[u8]) -> usize {
-    match take_while(data, |c| c.is_ascii_whitespace()) {
-        Some((_, bytes_skipped)) => bytes_skipped,
-        None => 0,
-    }
+fn skip_whitespace(data: &[u8]) -> u32 {
+    take_while(data, |c| c.is_ascii_whitespace()).unwrap_or(0)
 }
 
 #[inline]
 /// Consumes bytes while a predicate evaluates to true.
-fn take_while<F>(data: &[u8], mut pred: F) -> Option<(&[u8], usize)>
+fn take_while<F>(data: &[u8], mut pred: F) -> Option<u32>
 where
     F: FnMut(u8) -> bool,
 {
@@ -376,63 +154,14 @@ where
     if current_index == 0 {
         None
     } else {
-        Some((&data[..current_index], current_index))
+        Some(current_index)
     }
 }
 
-pub struct Tokenizer<'a> {
-    current_index: usize,
-    remaining_bytes: &'a [u8],
-}
-
-impl<'a> Tokenizer<'a> {
-    pub fn new(src: &[u8]) -> Tokenizer {
-        Tokenizer {
-            current_index: 0,
-            remaining_bytes: src,
-        }
-    }
-
-    pub fn next_token(&mut self) -> Result<Option<Token>> {
-        self.skip_whitespace();
-
-        if self.remaining_bytes.is_empty() {
-            Ok(None)
-        } else {
-            let tok = self._next_token()?;
-            Ok(Some(tok))
-        }
-    }
-
-    pub fn tokenize(src: &[u8]) -> Result<Vec<Token>> {
-        let mut tokenizer = Tokenizer::new(src);
-        let mut tokens = Vec::new();
-
-        while let Some(tok) = tokenizer.next_token()? {
-            tokens.push(tok);
-        }
-        Ok(tokens)
-    }
-
-    fn skip_whitespace(&mut self) {
-        let skipped = skip_whitespace(self.remaining_bytes);
-        self.chomp(skipped);
-    }
-
-    fn _next_token(&mut self) -> Result<Token> {
-        let (tok, bytes_read) = tokenize_single_token(self.remaining_bytes)?;
-        self.chomp(bytes_read);
-        Ok(tok)
-    }
-
-    fn chomp(&mut self, num_bytes: usize) {
-        self.remaining_bytes = &self.remaining_bytes[num_bytes..];
-        self.current_index += num_bytes;
-    }
-}
-
+/// Result of a single tokenization attempt.
 pub type Result<T> = std::result::Result<T, Error>;
 
+/// Error type for the lexer.
 #[derive(Error, Debug, PartialEq)]
 pub enum Error {
     #[error("invalid identifier: {0}")]
@@ -444,14 +173,175 @@ pub enum Error {
     #[error("invalid boolean: {0}")]
     InvalidBool(String),
 
-    #[error("invalid operator: {0}")]
-    InvalidOperator(String),
+    #[error("invalid keyword: {0}")]
+    InvalidKeyword(String),
 
     #[error("Unsupported Character `{0}`")]
     UnsupportedCharacter(u8),
 
     #[error("Unterminated string `{0}`")]
     UnterminatedString(String),
+}
+
+/// Try to lex a single token from the input stream.
+fn tokenize_single_token(data: &[u8]) -> Result<(TokenKind, u32)> {
+    let b = match data.get(0) {
+        Some(b) => b,
+        None => panic!("invalid data passed"),
+    };
+
+    let (token, end) = match b {
+        b'=' if data.get(1) == Some(&b'=') => (TokenKind::Equals, 2),
+        b'=' => (TokenKind::Equals, 1),
+        b'+' => (TokenKind::Add, 1),
+        b'-' => (TokenKind::Subtract, 1),
+        b'*' => (TokenKind::Multiply, 1),
+        b'/' => (TokenKind::Divide, 1),
+        b'>' if data.get(1) == Some(&b'=') => (TokenKind::Gte, 2),
+        b'>' => (TokenKind::Gt, 1),
+        b'<' if data.get(1) == Some(&b'=') => (TokenKind::Lte, 2),
+        b'<' => (TokenKind::Lt, 1),
+        b'(' => (TokenKind::OpenParen, 1),
+        b')' => (TokenKind::CloseParen, 1),
+        b'[' => (TokenKind::OpenBracket, 1),
+        b']' => (TokenKind::CloseBracket, 1),
+        b',' => (TokenKind::Comma, 1),
+        b'!' => (TokenKind::Not, 1),
+        b'"' | b'\'' => tokenize_string(data, *b)?,
+        b'.' => tokenize_identifier(data)?,
+        b't' | b'f' => tokenize_bool(data)?,
+        b'&' if data.get(1) == Some(&b'&') => (TokenKind::And, 2),
+        b'|' if data.get(1) == Some(&b'|') => (TokenKind::Or, 2),
+        b'O' => tokenize_keyword(data, "OR".as_bytes(), TokenKind::Or)?,
+        b'C' => tokenize_keyword(data, "CONTAINS".as_bytes(), TokenKind::Contains)?,
+        b'I' => tokenize_keyword(data, "IN".as_bytes(), TokenKind::In)?,
+        b'S' => tokenize_keyword(data, "STARTSWITH".as_bytes(), TokenKind::StartsWith)?,
+        b'E' => tokenize_keyword(data, "ENDSWITH".as_bytes(), TokenKind::EndsWith)?,
+        b'N' => tokenize_null(data)?,
+        c if c.is_ascii_digit() => tokenize_number(data)?,
+        _ => return Err(Error::UnsupportedCharacter(*b)),
+    };
+    Ok((token, end))
+}
+
+#[inline]
+fn tokenize_string(data: &[u8], quote: u8) -> Result<(TokenKind, u32)> {
+    let mut last_backslash = false;
+    let mut ended_with_terminator = false;
+
+    match take_while(&data[1..], |c| match c {
+        b'\\' => {
+            last_backslash = true;
+            true
+        }
+        _ if c == quote => {
+            if last_backslash {
+                last_backslash = false;
+                true
+            } else {
+                ended_with_terminator = true;
+                false
+            }
+        }
+        _ => {
+            last_backslash = false;
+            true
+        }
+    }) {
+        Some(end) => {
+            if ended_with_terminator {
+                Ok((TokenKind::QuotedString, end + 2))
+            } else {
+                Err(Error::UnterminatedString(
+                    String::from_utf8_lossy(data).to_string(),
+                ))
+            }
+        }
+        None => {
+            if !ended_with_terminator || data.len() < 2 {
+                Err(Error::UnterminatedString(
+                    String::from_utf8_lossy(data).to_string(),
+                ))
+            } else {
+                Ok((TokenKind::QuotedString, 2))
+            }
+        }
+    }
+}
+
+#[inline]
+fn tokenize_identifier(data: &[u8]) -> Result<(TokenKind, u32)> {
+    match take_while(&data[1..], |c| {
+        !c.is_ascii_whitespace() && c != b')' && c != b']'
+    }) {
+        Some(end) => Ok((TokenKind::Identifier, end + 1)),
+        None => Err(Error::InvalidIdentifier(
+            String::from_utf8_lossy(data).to_string(),
+        )),
+    }
+}
+
+#[inline]
+fn tokenize_bool(data: &[u8]) -> Result<(TokenKind, u32)> {
+    match take_while(data, |c| c.is_ascii_alphabetic()) {
+        Some(end) => match data[..end as usize] {
+            [b't', b'r', b'u', b'e'] => Ok((TokenKind::BooleanTrue, end)),
+            [b'f', b'a', b'l', b's', b'e'] => Ok((TokenKind::BooleanFalse, end)),
+            _ => Err(Error::InvalidBool(
+                String::from_utf8_lossy(data).to_string(),
+            )),
+        },
+        None => Err(Error::InvalidBool(
+            String::from_utf8_lossy(data).to_string(),
+        )),
+    }
+}
+
+#[inline]
+fn tokenize_keyword(data: &[u8], keyword: &[u8], kind: TokenKind) -> Result<(TokenKind, u32)> {
+    match take_while(data, |c| !c.is_ascii_whitespace()) {
+        Some(end) if &data[..end as usize] == keyword && data.len() > keyword.len() => {
+            Ok((kind, end))
+        }
+        _ => Err(Error::InvalidKeyword(
+            String::from_utf8_lossy(data).to_string(),
+        )),
+    }
+}
+
+#[inline]
+fn tokenize_null(data: &[u8]) -> Result<(TokenKind, u32)> {
+    match take_while(data, |c| c.is_ascii_alphabetic()) {
+        Some(end) if data[..end as usize] == [b'N', b'U', b'L', b'L'] => Ok((TokenKind::Null, end)),
+        _ => Err(Error::InvalidKeyword(
+            String::from_utf8_lossy(data).to_string(),
+        )),
+    }
+}
+
+#[inline]
+fn tokenize_number(data: &[u8]) -> Result<(TokenKind, u32)> {
+    let mut dot_seen = false;
+    let mut bad_number = false;
+
+    match take_while(data, |c| match c {
+        b'.' => {
+            if dot_seen {
+                bad_number = true;
+                false
+            } else {
+                dot_seen = true;
+                true
+            }
+        }
+        b'-' | b'+' => true,
+        _ => c.is_ascii_alphanumeric(),
+    }) {
+        Some(end) if !bad_number => Ok((TokenKind::Number, end)),
+        _ => Err(Error::InvalidNumber(
+            String::from_utf8_lossy(data).to_string(),
+        )),
+    }
 }
 
 #[cfg(test)]
@@ -463,7 +353,7 @@ mod tests {
             #[test]
             fn $name() -> Result<()> {
                 let src: &str = $src;
-                let mut tokenizer = Tokenizer::new(src.as_bytes());
+                let mut tokenizer = Tokenizer::new_bytes(src.as_bytes());
                 let err = tokenizer.next_token();
                 assert_eq!(Err($e), err);
                 Ok(())
@@ -473,7 +363,7 @@ mod tests {
             #[test]
             fn $name() -> Result<()> {
                 let src: &str = $src;
-                let mut tokenizer = Tokenizer::new(src.as_bytes());
+                let mut tokenizer = Tokenizer::new_bytes(src.as_bytes());
 
                 $(
                     let token = tokenizer.next_token()?.unwrap();
@@ -485,11 +375,51 @@ mod tests {
     }
 
     // singular
-    lex_test!(parse_bool_true, "true", Token::Boolean(true));
-    lex_test!(parse_bool_fase, "false", Token::Boolean(false));
-    lex_test!(parse_number_float, "123.23", Token::Number(123.23));
-    lex_test!(parse_number_exp, "1e-10", Token::Number(1e-10));
-    lex_test!(parse_number_int, "123", Token::Number(123_f64));
+    lex_test!(
+        parse_bool_true,
+        "true",
+        Token {
+            kind: TokenKind::BooleanTrue,
+            start: 0,
+            end: 4
+        }
+    );
+    lex_test!(
+        parse_bool_fase,
+        "false",
+        Token {
+            kind: TokenKind::BooleanFalse,
+            start: 0,
+            end: 5
+        }
+    );
+    lex_test!(
+        parse_number_float,
+        "123.23",
+        Token {
+            kind: TokenKind::Number,
+            start: 0,
+            end: 6
+        }
+    );
+    lex_test!(
+        parse_number_exp,
+        "1e-10",
+        Token {
+            kind: TokenKind::Number,
+            start: 0,
+            end: 5
+        }
+    );
+    lex_test!(
+        parse_number_int,
+        "123",
+        Token {
+            kind: TokenKind::Number,
+            start: 0,
+            end: 3
+        }
+    );
     lex_test!(
         FAIL: parse_number_invalid,
         "123.23.23",
@@ -498,7 +428,11 @@ mod tests {
     lex_test!(
         parse_identifier,
         ".properties.first_name",
-        Token::Identifier("properties.first_name".to_string())
+        Token {
+            kind: TokenKind::Identifier,
+            start: 0,
+            end: 22
+        }
     );
     lex_test!(
         FAIL: parse_identifier_blank,
@@ -508,9 +442,21 @@ mod tests {
     lex_test!(
         parse_string,
         r#""quoted""#,
-        Token::String("quoted".to_string())
+        Token {
+            kind: TokenKind::QuotedString,
+            start: 0,
+            end: 8
+        }
     );
-    lex_test!(parse_string_blank, r#""""#, Token::String("".to_string()));
+    lex_test!(
+        parse_string_blank,
+        r#""""#,
+        Token {
+            kind: TokenKind::QuotedString,
+            start: 0,
+            end: 2
+        }
+    );
     lex_test!(
         FAIL: parse_string_unterminated,
         r#""dfg"#,
@@ -521,93 +467,323 @@ mod tests {
         r#"""#,
         Error::UnterminatedString(r#"""#.to_string())
     );
-    lex_test!(parse_equals, "=", Token::Equals);
-    lex_test!(parse_add, "+", Token::Add);
-    lex_test!(parse_subtracts, "-", Token::Subtract);
-    lex_test!(parse_multiple, "*", Token::Multiply);
-    lex_test!(parse_divide, "/", Token::Divide);
-    lex_test!(parse_gt, ">", Token::Gt);
-    lex_test!(parse_gte, ">=", Token::Gte);
-    lex_test!(parse_lt, "<", Token::Lt);
-    lex_test!(parse_lte, "<=", Token::Lte);
-    lex_test!(parse_open_paren, "(", Token::OpenParen);
-    lex_test!(parse_close_paran, ")", Token::CloseParen);
-    lex_test!(parse_open_bracket, "[", Token::OpenBracket);
-    lex_test!(parse_close_bracket, "]", Token::CloseBracket);
-    lex_test!(parse_comma, ",", Token::Comma);
+    lex_test!(
+        parse_equals_single,
+        "=",
+        Token {
+            kind: TokenKind::Equals,
+            start: 0,
+            end: 1
+        }
+    );
+    lex_test!(
+        parse_equals,
+        "==",
+        Token {
+            kind: TokenKind::Equals,
+            start: 0,
+            end: 2
+        }
+    );
+    lex_test!(
+        parse_add,
+        "+",
+        Token {
+            kind: TokenKind::Add,
+            start: 0,
+            end: 1
+        }
+    );
+    lex_test!(
+        parse_subtracts,
+        "-",
+        Token {
+            kind: TokenKind::Subtract,
+            start: 0,
+            end: 1
+        }
+    );
+    lex_test!(
+        parse_multiple,
+        "*",
+        Token {
+            kind: TokenKind::Multiply,
+            start: 0,
+            end: 1
+        }
+    );
+    lex_test!(
+        parse_divide,
+        "/",
+        Token {
+            kind: TokenKind::Divide,
+            start: 0,
+            end: 1
+        }
+    );
+    lex_test!(
+        parse_gt,
+        ">",
+        Token {
+            kind: TokenKind::Gt,
+            start: 0,
+            end: 1
+        }
+    );
+    lex_test!(
+        parse_gte,
+        ">=",
+        Token {
+            kind: TokenKind::Gte,
+            start: 0,
+            end: 2
+        }
+    );
+    lex_test!(
+        parse_lt,
+        "<",
+        Token {
+            kind: TokenKind::Lt,
+            start: 0,
+            end: 1
+        }
+    );
+    lex_test!(
+        parse_lte,
+        "<=",
+        Token {
+            kind: TokenKind::Lte,
+            start: 0,
+            end: 2
+        }
+    );
+    lex_test!(
+        parse_open_paren,
+        "(",
+        Token {
+            kind: TokenKind::OpenParen,
+            start: 0,
+            end: 1
+        }
+    );
+    lex_test!(
+        parse_close_paran,
+        ")",
+        Token {
+            kind: TokenKind::CloseParen,
+            start: 0,
+            end: 1
+        }
+    );
+    lex_test!(
+        parse_open_bracket,
+        "[",
+        Token {
+            kind: TokenKind::OpenBracket,
+            start: 0,
+            end: 1
+        }
+    );
+    lex_test!(
+        parse_close_bracket,
+        "]",
+        Token {
+            kind: TokenKind::CloseBracket,
+            start: 0,
+            end: 1
+        }
+    );
+    lex_test!(
+        parse_comma,
+        ",",
+        Token {
+            kind: TokenKind::Comma,
+            start: 0,
+            end: 1
+        }
+    );
 
     // more complex
     lex_test!(
         parse_add_ident,
         ".field1 + .field2",
-        Token::Identifier("field1".to_string()),
-        Token::Add,
-        Token::Identifier("field2".to_string())
+        Token {
+            kind: TokenKind::Identifier,
+            start: 0,
+            end: 7
+        },
+        Token {
+            kind: TokenKind::Add,
+            start: 8,
+            end: 9
+        },
+        Token {
+            kind: TokenKind::Identifier,
+            start: 10,
+            end: 17
+        }
     );
     lex_test!(
         parse_sub_ident,
         ".field1 - .field2",
-        Token::Identifier("field1".to_string()),
-        Token::Subtract,
-        Token::Identifier("field2".to_string())
+        Token {
+            kind: TokenKind::Identifier,
+            start: 0,
+            end: 7
+        },
+        Token {
+            kind: TokenKind::Subtract,
+            start: 8,
+            end: 9
+        },
+        Token {
+            kind: TokenKind::Identifier,
+            start: 10,
+            end: 17
+        }
     );
     lex_test!(
         parse_brackets,
         ".field1 - ( .field2 + .field3 )",
-        Token::Identifier("field1".to_string()),
-        Token::Subtract,
-        Token::OpenParen,
-        Token::Identifier("field2".to_string()),
-        Token::Add,
-        Token::Identifier("field3".to_string()),
-        Token::CloseParen
+        Token {
+            kind: TokenKind::Identifier,
+            start: 0,
+            end: 7
+        },
+        Token {
+            kind: TokenKind::Subtract,
+            start: 8,
+            end: 9
+        },
+        Token {
+            kind: TokenKind::OpenParen,
+            start: 10,
+            end: 11
+        },
+        Token {
+            kind: TokenKind::Identifier,
+            start: 12,
+            end: 19
+        },
+        Token {
+            kind: TokenKind::Add,
+            start: 20,
+            end: 21
+        },
+        Token {
+            kind: TokenKind::Identifier,
+            start: 22,
+            end: 29
+        },
+        Token {
+            kind: TokenKind::CloseParen,
+            start: 30,
+            end: 31
+        }
     );
 
-    lex_test!(parse_or, " OR ", Token::Or);
     lex_test!(
-        FAIL: parse_bad_or,
-        " OR",
-        Error::InvalidOperator("OR".to_string())
+        parse_or,
+        "||",
+        Token {
+            kind: TokenKind::Or,
+            start: 0,
+            end: 2
+        }
     );
+    lex_test!(FAIL: parse_bad_or, "|", Error::UnsupportedCharacter(b'|'));
 
-    lex_test!(parse_in, " IN ", Token::In);
+    lex_test!(
+        parse_in,
+        " IN ",
+        Token {
+            kind: TokenKind::In,
+            start: 1,
+            end: 3
+        }
+    );
     lex_test!(
         FAIL: parse_bad_in,
         " IN",
-        Error::InvalidOperator("IN".to_string())
+        Error::InvalidKeyword("IN".to_string())
     );
 
-    lex_test!(parse_contains, " CONTAINS ", Token::Contains);
+    lex_test!(
+        parse_contains,
+        " CONTAINS ",
+        Token {
+            kind: TokenKind::Contains,
+            start: 1,
+            end: 9
+        }
+    );
     lex_test!(
         FAIL: contains,
         " CONTAINS",
-        Error::InvalidOperator("CONTAINS".to_string())
+        Error::InvalidKeyword("CONTAINS".to_string())
     );
 
-    lex_test!(parse_starts_with, " STARTSWITH ", Token::StartsWith);
+    lex_test!(
+        parse_starts_with,
+        " STARTSWITH ",
+        Token {
+            kind: TokenKind::StartsWith,
+            start: 1,
+            end: 11
+        }
+    );
     lex_test!(
         FAIL: parse_bad_starts_with,
         " STARTSWITH",
-        Error::InvalidOperator("STARTSWITH".to_string())
+        Error::InvalidKeyword("STARTSWITH".to_string())
     );
 
-    lex_test!(parse_ends_with, " ENDSWITH ", Token::EndsWith);
+    lex_test!(
+        parse_ends_with,
+        " ENDSWITH ",
+        Token {
+            kind: TokenKind::EndsWith,
+            start: 1,
+            end: 9
+        }
+    );
     lex_test!(
         FAIL: parse_bad_ends_with,
         " ENDSWITH",
-        Error::InvalidOperator("ENDSWITH".to_string())
+        Error::InvalidKeyword("ENDSWITH".to_string())
     );
 
-    lex_test!(parse_null, "NULL", Token::Null);
+    lex_test!(
+        parse_null,
+        "NULL",
+        Token {
+            kind: TokenKind::Null,
+            start: 0,
+            end: 4
+        }
+    );
     lex_test!(
         FAIL: parse_bad_null,
         "NULLL",
-        Error::InvalidOperator("NULLL".to_string())
+        Error::InvalidKeyword("NULLL".to_string())
     );
-    lex_test!(parse_and, " AND ", Token::And);
     lex_test!(
-        FAIL: parse_bad_and,
-        " AND",
-        Error::InvalidOperator("AND".to_string())
+        parse_and,
+        "&&",
+        Token {
+            kind: TokenKind::And,
+            start: 0,
+            end: 2
+        }
+    );
+    lex_test!(FAIL: parse_bad_and, "&", Error::UnsupportedCharacter(b'&'));
+    lex_test!(
+        parse_not,
+        "!",
+        Token {
+            kind: TokenKind::Not,
+            start: 0,
+            end: 1
+        }
     );
 }
