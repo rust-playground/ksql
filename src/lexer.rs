@@ -119,7 +119,7 @@ impl<'a> Tokenizer<'a> {
 
     fn chomp(&mut self, len: u16) {
         self.remaining = &self.remaining[len as usize..];
-        self.pos += len as u32;
+        self.pos += u32::from(len);
     }
 }
 
