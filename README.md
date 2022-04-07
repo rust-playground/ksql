@@ -67,10 +67,7 @@ Expressions support most mathematical and string expressions see below for detai
 | `EndsWith`     | `ENDSWITH `              | Ends with whitespace blank space.                                                                                                                                                         |
 | `NULL`         | `NULL`                   | N/A                                                                                                                                                                                       |
 
-
-
-```
-
+    
 #### License
 
 <sup>
