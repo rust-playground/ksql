@@ -32,6 +32,7 @@
 
 use thiserror::Error;
 
+/// The lexed token.
 #[derive(Debug, PartialEq)]
 pub struct Token {
     pub kind: TokenKind,
@@ -39,6 +40,7 @@ pub struct Token {
     pub end: u32,
 }
 
+/// The kind of `Token`.
 #[derive(Debug, PartialEq)]
 pub enum TokenKind {
     Identifier,

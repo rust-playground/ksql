@@ -3,7 +3,7 @@
 //! Is a JSON data expression lexer, parser, cli and library.
 //!
 //! #### Expressions
-//! Expressions support most mathematical and string expressions see [here](https://github.com/rust-playground/ksql/LEXER.md) for details of the lexer support and rules.
+//! Expressions support most mathematical and string expressions see the `lexer` module for details of the lexer support and rules.
 //!
 //! ```rust
 //! use ksql::parser::{Parser, Value};
