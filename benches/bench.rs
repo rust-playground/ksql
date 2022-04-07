@@ -2,8 +2,9 @@
 extern crate criterion;
 
 use criterion::{Criterion, Throughput};
-use ksql::lexer::Tokenizer;
+use ksql::lexer::{Token, Tokenizer};
 use ksql::parser::Parser;
+use std::result::Result as StdResult;
 
 fn benchmark_lexer(c: &mut Criterion) {
     let mut group = c.benchmark_group("lex_individual");
@@ -21,7 +22,7 @@ fn benchmark_lexer(c: &mut Criterion) {
         group.throughput(Throughput::Bytes(src.len() as u64));
         group.bench_function(*name, |b| {
             b.iter(|| {
-                let _res = Tokenizer::tokenize(src);
+                let _res = Tokenizer::new(src).next();
             })
         });
     }
@@ -41,7 +42,9 @@ fn benchmark_lexer(c: &mut Criterion) {
         group.throughput(Throughput::Bytes(src.len() as u64));
         group.bench_function(*name, |b| {
             b.iter(|| {
-                let _res = Tokenizer::tokenize(src);
+                let _res = Tokenizer::new(src)
+                    .collect::<StdResult<Vec<Token>, _>>()
+                    .unwrap();
             })
         });
     }

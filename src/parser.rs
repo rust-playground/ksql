@@ -19,6 +19,7 @@ use anyhow::anyhow;
 use gjson::Kind;
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Display, Formatter};
+use std::result::Result as StdResult;
 use thiserror::Error;
 
 /// Represents the calculated Expression result.
@@ -132,7 +133,7 @@ impl<'a> Parser<'a> {
     ///
     /// Will return `Err` the expression is invalid.
     pub fn parse_bytes(expression: &[u8]) -> anyhow::Result<BoxedExpression> {
-        let tokens = Tokenizer::tokenize_bytes(expression)?;
+        let tokens = Tokenizer::new_bytes(expression).collect::<StdResult<Vec<Token>, _>>()?;
         let mut pos = 0;
         let parser = Parser::new(expression);
         let result = parser.parse_value(&tokens, &mut pos)?;

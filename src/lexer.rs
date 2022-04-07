@@ -79,36 +79,20 @@ pub struct Tokenizer<'a> {
 }
 
 impl<'a> Tokenizer<'a> {
-    fn new_bytes(src: &'a [u8]) -> Self {
+    /// Creates a new `Tokenizer` to iterate over tokens
+    #[inline]
+    #[must_use]
+    pub fn new(src: &'a str) -> Self {
+        Self::new_bytes(src.as_bytes())
+    }
+
+    /// Creates a new `Tokenizer` to iterate over tokens using bytes as the source.
+    #[must_use]
+    pub fn new_bytes(src: &'a [u8]) -> Self {
         Self {
             pos: 0,
             remaining: src,
         }
-    }
-
-    /// lexes the provided expression as bytes.
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if the expression is invalid.
-    pub fn tokenize_bytes(src: &[u8]) -> Result<Vec<Token>> {
-        let mut tokenizer = Tokenizer::new_bytes(src);
-        let mut tokens = Vec::new();
-
-        while let Some(tok) = tokenizer.next_token()? {
-            tokens.push(tok);
-        }
-        Ok(tokens)
-    }
-
-    /// lexes the provided expression.
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if the expression is invalid.
-    #[inline]
-    pub fn tokenize(src: &str) -> Result<Vec<Token>> {
-        Tokenizer::tokenize_bytes(src.as_bytes())
     }
 
     fn next_token(&mut self) -> Result<Option<Token>> {
@@ -136,6 +120,14 @@ impl<'a> Tokenizer<'a> {
     fn chomp(&mut self, len: u32) {
         self.remaining = &self.remaining[len as usize..];
         self.pos += len;
+    }
+}
+
+impl Iterator for Tokenizer<'_> {
+    type Item = Result<Token>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.next_token().transpose()
     }
 }
 
