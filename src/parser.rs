@@ -148,22 +148,31 @@ impl<'a> Parser<'a> {
         if let Some(tok) = self.tokenizer.next() {
             let tok = tok?;
             match tok.kind {
-                TokenKind::Identifier => self.parse_op(Box::new(Ident {
-                    ident: String::from_utf8_lossy(
-                        &self.exp[(tok.start + 1) as usize..tok.end as usize],
-                    )
-                    .into_owned(),
-                })),
-                TokenKind::QuotedString => self.parse_op(Box::new(Str {
-                    s: String::from_utf8_lossy(
-                        &self.exp[(tok.start + 1) as usize..(tok.end - 1) as usize],
-                    )
-                    .into_owned(),
-                })),
-                TokenKind::Number => self.parse_op(Box::new(Num {
-                    n: String::from_utf8_lossy(&self.exp[tok.start as usize..tok.end as usize])
-                        .parse()?,
-                })),
+                TokenKind::Identifier => {
+                    let start = tok.start as usize;
+                    self.parse_op(Box::new(Ident {
+                        ident: String::from_utf8_lossy(
+                            &self.exp[start + 1..(start + tok.len as usize)],
+                        )
+                        .into_owned(),
+                    }))
+                }
+                TokenKind::QuotedString => {
+                    let start = tok.start as usize;
+                    self.parse_op(Box::new(Str {
+                        s: String::from_utf8_lossy(
+                            &self.exp[start + 1..(start + tok.len as usize - 1)],
+                        )
+                        .into_owned(),
+                    }))
+                }
+                TokenKind::Number => {
+                    let start = tok.start as usize;
+                    self.parse_op(Box::new(Num {
+                        n: String::from_utf8_lossy(&self.exp[start..start + tok.len as usize])
+                            .parse()?,
+                    }))
+                }
                 TokenKind::BooleanTrue => self.parse_op(Box::new(Bool { b: true })),
                 TokenKind::BooleanFalse => self.parse_op(Box::new(Bool { b: false })),
                 TokenKind::Null => self.parse_op(Box::new(Null {})),
@@ -314,10 +323,13 @@ impl<'a> Parser<'a> {
                     self.parse_op(op)
                 }
                 TokenKind::CloseBracket | TokenKind::CloseParen => Ok(Some(value)),
-                _ => Err(anyhow!(
-                    "invalid token after ident '{:?}'",
-                    String::from_utf8_lossy(&self.exp[tok.start as usize..=tok.end as usize])
-                )),
+                _ => {
+                    let start = tok.start as usize;
+                    Err(anyhow!(
+                        "invalid token after ident '{:?}'",
+                        String::from_utf8_lossy(&self.exp[start..=start + tok.len as usize])
+                    ))
+                }
             }
         } else {
             Ok(Some(value))
