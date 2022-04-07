@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - AND->&& and OR->|| and =->==in lexer.
 - Expression signature to accept &[u8] instead of &str
 - Lexer token return signature reducing its size from 32->12 bytes
+- Lexer now implements Iterator instead of returning a Vec of Tokens.
 
 ### Added
 - Not token type and support in lexer + parser.
