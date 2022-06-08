@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2022-06-08
+### Fixed
+- Missing commas between items is output JSON Objects.
+
+### Changed
+- Release profile for smaller binary size.
+- Updated deps to latest.
+- Linter suggested updates.
+
 ## [0.3.0] - 2022-04-06
 ### Changed
 - Lexer token return signature reducing its size from 12->8 bytes
@@ -39,8 +48,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Initial release.
 
-[Unreleased]: https://github.com/rust-playground/ksql/compare/v0.3.0...HEAD
-[0.2.0]: https://github.com/rust-playground/ksql/compare/v0.2.0...v0.3.0
+[Unreleased]: https://github.com/rust-playground/ksql/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/rust-playground/ksql/compare/v0.3.0...v0.3.1
+[0.3.0]: https://github.com/rust-playground/ksql/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/rust-playground/ksql/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/rust-playground/ksql/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/rust-playground/ksql/compare/v0.1.0...v0.1.1

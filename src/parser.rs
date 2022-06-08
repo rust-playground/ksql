@@ -18,7 +18,7 @@ use crate::lexer::{TokenKind, Tokenizer};
 use anyhow::anyhow;
 use gjson::Kind;
 use std::collections::BTreeMap;
-use std::fmt::{Debug, Display, Formatter};
+use std::fmt::{Debug, Display, Formatter, Write};
 use thiserror::Error;
 
 /// Represents the calculated Expression result.
@@ -43,8 +43,9 @@ impl Display for Value {
                 let mut s = String::new();
                 s.push('{');
                 for (k, v) in o.iter() {
-                    s.push_str(&format!(r#""{}":{}"#, k, v));
+                    let _ = write!(s, r#""{}":{},"#, k, v);
                 }
+                s = s.trim_end_matches(',').to_string();
                 s.push('}');
                 s
             }),
@@ -52,7 +53,7 @@ impl Display for Value {
                 let mut s = String::new();
                 s.push('[');
                 for v in a.iter() {
-                    s.push_str(&format!("{},", v));
+                    let _ = write!(s, "{},", v);
                 }
                 s = s.trim_end_matches(',').to_string();
                 s.push(']');
@@ -740,7 +741,7 @@ impl Expression for Arr {
 pub type Result<T> = std::result::Result<T, Error>;
 
 /// Error type for the expression parser.
-#[derive(Error, Debug, PartialEq)]
+#[derive(Error, Debug, PartialEq, Eq)]
 pub enum Error {
     #[error("unsupported type comparison: {0}")]
     UnsupportedTypeComparison(String),
