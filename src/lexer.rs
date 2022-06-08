@@ -33,7 +33,7 @@
 use thiserror::Error;
 
 /// The lexed token.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Token {
     pub start: u32,
     pub len: u16,
@@ -41,7 +41,7 @@ pub struct Token {
 }
 
 /// The kind of `Token`.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum TokenKind {
     Identifier,
     QuotedString,
@@ -162,7 +162,7 @@ where
 pub type Result<T> = std::result::Result<T, Error>;
 
 /// Error type for the lexer.
-#[derive(Error, Debug, PartialEq)]
+#[derive(Error, Debug, PartialEq, Eq)]
 pub enum Error {
     #[error("invalid identifier: {0}")]
     InvalidIdentifier(String),

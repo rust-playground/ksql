@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Release profile for smaller binary size.
 - Updated deps to latest.
+- Linter suggested updates.
 
 ## [0.3.0] - 2022-04-06
 ### Changed
