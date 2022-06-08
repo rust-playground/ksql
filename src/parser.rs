@@ -43,8 +43,9 @@ impl Display for Value {
                 let mut s = String::new();
                 s.push('{');
                 for (k, v) in o.iter() {
-                    s.push_str(&format!(r#""{}":{}"#, k, v));
+                    s.push_str(&format!(r#""{}":{},"#, k, v));
                 }
+                s = s.trim_end_matches(',').to_string();
                 s.push('}');
                 s
             }),
