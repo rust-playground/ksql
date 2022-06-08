@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Missing commas between items is output JSON Objects.
 
+### Changed
+- Release profile for smaller binary size.
+- Updated deps to latest.
+
 ## [0.3.0] - 2022-04-06
 ### Changed
 - Lexer token return signature reducing its size from 12->8 bytes
