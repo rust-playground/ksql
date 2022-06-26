@@ -28,7 +28,6 @@ fn main() -> anyhow::Result<()> {
     if is_pipe {
         let stdin = stdin();
         let mut stdin = stdin.lock();
-
         let mut data = Vec::new();
 
         while stdin.read_until(b'\n', &mut data)? > 0 {
