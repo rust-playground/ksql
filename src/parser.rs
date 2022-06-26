@@ -18,7 +18,7 @@ use crate::lexer::{TokenKind, Tokenizer};
 use anyhow::anyhow;
 use gjson::Kind;
 use std::collections::BTreeMap;
-use std::fmt::{Debug, Display, Formatter, Write};
+use std::fmt::{Debug, Display, Formatter};
 use thiserror::Error;
 
 /// Represents the calculated Expression result.
@@ -35,30 +35,47 @@ pub enum Value {
 impl Display for Value {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            Value::Null => write!(f, "null"),
-            Value::String(s) => write!(f, r#""{}""#, s),
+            Value::Null => f.write_str("null"),
+            Value::String(s) => {
+                f.write_str(r#"""#)?;
+                f.write_str(s)?;
+                f.write_str(r#"""#)
+            }
             Value::Number(n) => write!(f, "{}", n),
-            Value::Bool(b) => write!(f, "{}", b),
-            Value::Object(o) => write!(f, "{}", {
-                let mut s = String::new();
-                s.push('{');
-                for (k, v) in o.iter() {
-                    let _ = write!(s, r#""{}":{},"#, k, v);
+            Value::Bool(b) => {
+                if *b {
+                    f.write_str("true")
+                } else {
+                    f.write_str("false")
                 }
-                s = s.trim_end_matches(',').to_string();
-                s.push('}');
-                s
-            }),
-            Value::Array(a) => write!(f, "{}", {
-                let mut s = String::new();
-                s.push('[');
-                for v in a.iter() {
-                    let _ = write!(s, "{},", v);
+            }
+            Value::Object(o) => {
+                f.write_str("{")?;
+
+                let len = o.len() - 1;
+                for (i, (k, v)) in o.iter().enumerate() {
+                    f.write_str(r#"""#)?;
+                    f.write_str(k)?;
+                    f.write_str(r#"":"#)?;
+                    write!(f, "{}", v)?;
+                    if i < len {
+                        f.write_str(",")?;
+                    }
                 }
-                s = s.trim_end_matches(',').to_string();
-                s.push(']');
-                s
-            }),
+                f.write_str("}")
+            }
+            Value::Array(a) => {
+                f.write_str("[")?;
+
+                let len = a.len() - 1;
+                for (i, v) in a.iter().enumerate() {
+                    write!(f, "{}", v)?;
+                    if i < len {
+                        f.write_str(",")?;
+                    }
+                }
+                f.write_str("]")
+            }
         }
     }
 }
@@ -1098,5 +1115,35 @@ mod tests {
         assert_eq!(Value::Bool(false), result);
 
         Ok(())
+    }
+
+    #[test]
+    fn test_display() {
+        assert_eq!(format!("{}", Value::Null), "null");
+        assert_eq!(
+            format!("{}", Value::String("string".to_string())),
+            r#""string""#
+        );
+        assert_eq!(format!("{}", Value::Number(64.1)), "64.1");
+        assert_eq!(format!("{}", Value::Bool(true)), "true");
+
+        let mut m = BTreeMap::new();
+        m.insert("key".to_string(), Value::String("value".to_string()));
+        m.insert("key2".to_string(), Value::String("value2".to_string()));
+
+        assert_eq!(
+            format!("{}", Value::Object(m)),
+            r#"{"key":"value","key2":"value2"}"#
+        );
+        assert_eq!(
+            format!(
+                "{}",
+                Value::Array(vec![
+                    Value::String("string".to_string()),
+                    Value::Number(1.1)
+                ])
+            ),
+            r#"["string",1.1]"#
+        );
     }
 }

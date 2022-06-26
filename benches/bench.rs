@@ -3,7 +3,8 @@ extern crate criterion;
 
 use criterion::{Criterion, Throughput};
 use ksql::lexer::{Token, Tokenizer};
-use ksql::parser::Parser;
+use ksql::parser::{Parser, Value};
+use std::collections::BTreeMap;
 use std::result::Result as StdResult;
 
 fn benchmark_lexer(c: &mut Criterion) {
@@ -111,5 +112,41 @@ fn benchmark_expressions(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, benchmark_expressions, benchmark_lexer);
+fn benchmark_display(c: &mut Criterion) {
+    let mut m = BTreeMap::new();
+    m.insert("key".to_string(), Value::String("value".to_string()));
+    m.insert("key2".to_string(), Value::String("value2".to_string()));
+
+    let mut group = c.benchmark_group("display");
+    for (name, val) in [
+        ("null", Value::Null),
+        ("string", Value::String("string".to_string())),
+        ("number", Value::Number(64.1)),
+        ("bool", Value::Bool(true)),
+        ("object", Value::Object(m)),
+        (
+            "array",
+            Value::Array(vec![
+                Value::String("string".to_string()),
+                Value::Number(64.1),
+            ]),
+        ),
+    ]
+    .iter()
+    {
+        group.bench_function(*name, |b| {
+            b.iter(|| {
+                let _res = format!("{}", val);
+            })
+        });
+    }
+    group.finish();
+}
+
+criterion_group!(
+    benches,
+    benchmark_display,
+    // benchmark_expressions,
+    // benchmark_lexer
+);
 criterion_main!(benches);
