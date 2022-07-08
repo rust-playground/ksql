@@ -340,7 +340,9 @@ impl<'a> Parser<'a> {
                         .map_or_else(|| Err(anyhow!("no value between ()")), Ok)?;
                     self.parse_op(op)
                 }
-                TokenKind::CloseBracket | TokenKind::CloseParen => Ok(Some(value)),
+                TokenKind::CloseBracket | TokenKind::CloseParen | TokenKind::Comma => {
+                    Ok(Some(value))
+                }
                 _ => {
                     let start = tok.start as usize;
                     Err(anyhow!(
@@ -1005,7 +1007,7 @@ mod tests {
 
     #[test]
     fn inn_arr() -> anyhow::Result<()> {
-        let expression = r#""me" IN ["me"]"#;
+        let expression = r#""me" IN ["you","me"]"#;
         let ex = Parser::parse(expression)?;
         let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(true), result);
