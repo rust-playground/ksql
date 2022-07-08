@@ -146,7 +146,7 @@ fn benchmark_display(c: &mut Criterion) {
 criterion_group!(
     benches,
     benchmark_display,
-    // benchmark_expressions,
-    // benchmark_lexer
+    benchmark_expressions,
+    benchmark_lexer
 );
 criterion_main!(benches);
