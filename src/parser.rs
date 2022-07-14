@@ -16,6 +16,7 @@
 
 use crate::lexer::{TokenKind, Tokenizer};
 use anyhow::anyhow;
+use chrono::{DateTime, FixedOffset, SecondsFormat};
 use gjson::Kind;
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Display, Formatter};
@@ -28,6 +29,7 @@ pub enum Value {
     String(String),
     Number(f64),
     Bool(bool),
+    DateTime(DateTime<FixedOffset>), // What to put here arg! do we preserve the original zone etc..?
     Object(BTreeMap<String, Value>),
     Array(Vec<Value>),
 }
@@ -39,6 +41,11 @@ impl Display for Value {
             Value::String(s) => {
                 f.write_str(r#"""#)?;
                 f.write_str(s)?;
+                f.write_str(r#"""#)
+            }
+            Value::DateTime(dt) => {
+                f.write_str(r#"""#)?;
+                f.write_str(&dt.to_rfc3339_opts(SecondsFormat::Nanos, true))?;
                 f.write_str(r#"""#)
             }
             Value::Number(n) => write!(f, "{}", n),
@@ -153,7 +160,7 @@ impl<'a> Parser<'a> {
     pub fn parse_bytes(expression: &[u8]) -> anyhow::Result<BoxedExpression> {
         let tokenizer = Tokenizer::new_bytes(expression);
         let mut parser = Parser::new(expression, tokenizer);
-        let result = parser.parse_value()?;
+        let result = parser.parse_value(false)?;
 
         if let Some(result) = result {
             Ok(result)
@@ -162,13 +169,14 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_value(&mut self) -> anyhow::Result<Option<BoxedExpression>> {
+    fn parse_value(&mut self, return_value_now: bool) -> anyhow::Result<Option<BoxedExpression>> {
         if let Some(tok) = self.tokenizer.next() {
             let tok = tok?;
+            dbg!(&tok.kind);
             match tok.kind {
-                TokenKind::Identifier => {
+                TokenKind::SelectorPath => {
                     let start = tok.start as usize;
-                    self.parse_op(Box::new(Ident {
+                    self.parse_op(Box::new(SelectorPath {
                         ident: String::from_utf8_lossy(
                             &self.exp[start + 1..(start + tok.len as usize)],
                         )
@@ -177,6 +185,8 @@ impl<'a> Parser<'a> {
                 }
                 TokenKind::QuotedString => {
                     let start = tok.start as usize;
+                    // TODO: make tokenizer peekable, peek here to see if next is a cast
+                    // to build a constant Value instead fo casting each time
                     self.parse_op(Box::new(Str {
                         s: String::from_utf8_lossy(
                             &self.exp[start + 1..(start + tok.len as usize - 1)],
@@ -229,9 +239,14 @@ impl<'a> Parser<'a> {
     }
 
     #[allow(clippy::too_many_lines)]
-    fn parse_op(&mut self, value: BoxedExpression) -> anyhow::Result<Option<BoxedExpression>> {
+    fn parse_op(
+        &mut self,
+        return_value_now: bool,
+        value: BoxedExpression,
+    ) -> anyhow::Result<Option<BoxedExpression>> {
         if let Some(tok) = self.tokenizer.next() {
             let tok = tok?;
+            dbg!(&tok.kind);
             match tok.kind {
                 TokenKind::In => {
                     let right = self
@@ -294,6 +309,13 @@ impl<'a> Parser<'a> {
                     Ok(Some(Box::new(Lte { left: value, right })))
                 }
                 TokenKind::Equals => {
+                    // yes need to parse RHS of equals
+                    // once a VALUE is parsed though, without any additional nesting, the RHS
+                    // parsing must stop! and then after creating Eq call parse_op again.
+                    //
+                    // We need to pass down a bool, or something, to know when it should return a
+                    // parse value, and when it's ok to continue parsing down the nested chain.
+                    //
                     let right = self
                         .parse_value()?
                         .map_or_else(|| Err(anyhow!("no value after ==")), Ok)?;
@@ -340,19 +362,63 @@ impl<'a> Parser<'a> {
                         .map_or_else(|| Err(anyhow!("no value between ()")), Ok)?;
                     self.parse_op(op)
                 }
+                TokenKind::Cast => {
+                    // special case, CAST MUST be followed by an Identifier that matches a static
+                    // pre-defined list of supported cast types.
+
+                    // TODO: call parse_op with CastDateTime instead of returning?
+                    let op = match self.tokenizer.next() {
+                        Some(Ok(tok)) if tok.kind == TokenKind::Identifier => {
+                            let start = tok.start as usize;
+                            let ident =
+                                String::from_utf8_lossy(&self.exp[start..start + tok.len as usize]);
+                            match ident.as_ref() {
+                                "datetime" => Box::new(CastDateTime { value }),
+                                _ => return Err(anyhow!("invalid CAST data type '{:?}'", &ident)),
+                            }
+                        }
+                        _ => {
+                            return Err(anyhow!(
+                                "invalid token type after CAST '{:?}'",
+                                String::from_utf8_lossy(&self.exp[tok.start as usize..])
+                            ))
+                        }
+                    };
+                    self.parse_op(op)
+                }
                 TokenKind::CloseBracket | TokenKind::CloseParen | TokenKind::Comma => {
                     Ok(Some(value))
                 }
                 _ => {
                     let start = tok.start as usize;
                     Err(anyhow!(
-                        "invalid token after ident '{:?}'",
+                        "invalid token after selector path '{:?}'",
                         String::from_utf8_lossy(&self.exp[start..=start + tok.len as usize])
                     ))
                 }
             }
         } else {
             Ok(Some(value))
+        }
+    }
+}
+
+#[derive(Debug)]
+struct CastDateTime {
+    value: BoxedExpression,
+}
+
+impl Expression for CastDateTime {
+    fn calculate(&self, json: &[u8]) -> Result<Value> {
+        let value = self.value.calculate(json)?;
+
+        match value {
+            // TODO: Add more variants
+            Value::String(ref s) => match anydate::parse(s) {
+                Err(_) => Ok(Value::Null),
+                Ok(dt) => Ok(Value::DateTime(dt)),
+            },
+            value => Err(Error::UnsupportedCast(format!("{:?} CAST datetime", value))),
         }
     }
 }
@@ -564,11 +630,11 @@ impl Expression for Not {
 }
 
 #[derive(Debug)]
-struct Ident {
+struct SelectorPath {
     ident: String,
 }
 
-impl Expression for Ident {
+impl Expression for SelectorPath {
     fn calculate(&self, json: &[u8]) -> Result<Value> {
         Ok(unsafe { gjson::get_bytes(json, &self.ident).into() })
     }
@@ -764,6 +830,9 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub enum Error {
     #[error("unsupported type comparison: {0}")]
     UnsupportedTypeComparison(String),
+
+    #[error("unsupported cast: {0}")]
+    UnsupportedCast(String),
 }
 
 #[cfg(test)]
@@ -928,11 +997,24 @@ mod tests {
         let ex = Parser::parse("false || false")?;
         let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(false), result);
+
+        let ex = Parser::parse("false || false || false == false")?;
+        let result = ex.calculate("".as_bytes())?;
+        assert_eq!(Value::Bool(true), result);
+
+        let ex = Parser::parse("false || false || false != false")?;
+        let result = ex.calculate("".as_bytes())?;
+        assert_eq!(Value::Bool(false), result);
+
         Ok(())
     }
 
     #[test]
     fn and() -> anyhow::Result<()> {
+        let ex = Parser::parse("true == true && false == false")?;
+        let result = ex.calculate("".as_bytes())?;
+        assert_eq!(Value::Bool(false), result);
+
         let ex = Parser::parse("true && true")?;
         let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(true), result);
@@ -948,6 +1030,7 @@ mod tests {
         let ex = Parser::parse("false && true")?;
         let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(false), result);
+
         Ok(())
     }
 
@@ -1147,5 +1230,37 @@ mod tests {
             ),
             r#"["string",1.1]"#
         );
+    }
+
+    #[test]
+    fn cast_datetime() -> anyhow::Result<()> {
+        let src = r#"{"name":"2022-01-02"}"#.as_bytes();
+        let expression = ".name CAST datetime";
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate(src)?;
+        assert_eq!(r#""2022-01-02T00:00:00.000000000Z""#, format!("{}", result));
+
+        let src = r#"{"dt1":"2022-01-02","dt2":"2022-01-02"}"#.as_bytes();
+        let expression = ".dt1 CAST datetime == .dt2 CAST datetime";
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate(src)?;
+        assert_eq!(Value::Bool(true), result);
+
+        let src =
+            r#"{"dt1":"2022-07-14T17:50:08.318426000Z","dt2":"2022-07-14T17:50:08.318426001Z"}"#
+                .as_bytes();
+        let expression = "(.dt1 CAST datetime == .dt2 CAST datetime) && true == true";
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate(src)?;
+        assert_eq!(Value::Bool(false), result);
+
+        // let src =
+        //     r#"{"dt1":"2022-07-14T17:50:08.318426000Z","dt2":"2022-07-14T17:50:08.318426001Z"}"#
+        //         .as_bytes();
+        // let expression = ".dt1 CAST datetime == .dt2 CAST datetime && true == true";
+        // let ex = Parser::parse(expression)?;
+        // let result = ex.calculate(src)?;
+        // assert_eq!(Value::Bool(false), result);
+        Ok(())
     }
 }

@@ -43,7 +43,7 @@ pub struct Token {
 /// The kind of `Token`.
 #[derive(Debug, PartialEq, Eq)]
 pub enum TokenKind {
-    Identifier,
+    SelectorPath,
     QuotedString,
     Number,
     BooleanTrue,
@@ -70,6 +70,8 @@ pub enum TokenKind {
     Comma,
     OpenParen,
     CloseParen,
+    Cast,
+    Identifier,
 }
 
 /// A lexer for the KSQL expression syntax.
@@ -208,20 +210,35 @@ fn tokenize_single_token(data: &[u8]) -> Result<(TokenKind, u16)> {
         b',' => (TokenKind::Comma, 1),
         b'!' => (TokenKind::Not, 1),
         b'"' | b'\'' => tokenize_string(data, *b)?,
-        b'.' => tokenize_identifier(data)?,
+        b'.' => tokenize_selector_path(data)?,
         b't' | b'f' => tokenize_bool(data)?,
         b'&' if data.get(1) == Some(&b'&') => (TokenKind::And, 2),
         b'|' if data.get(1) == Some(&b'|') => (TokenKind::Or, 2),
         b'O' => tokenize_keyword(data, "OR".as_bytes(), TokenKind::Or)?,
-        b'C' => tokenize_keyword(data, "CONTAINS".as_bytes(), TokenKind::Contains)?,
+        b'C' if data.get(1) == Some(&b'O') => {
+            tokenize_keyword(data, "CONTAINS".as_bytes(), TokenKind::Contains)?
+        }
+        b'C' if data.get(1) == Some(&b'A') => {
+            tokenize_keyword(data, "CAST".as_bytes(), TokenKind::Cast)?
+        }
         b'I' => tokenize_keyword(data, "IN".as_bytes(), TokenKind::In)?,
         b'S' => tokenize_keyword(data, "STARTSWITH".as_bytes(), TokenKind::StartsWith)?,
         b'E' => tokenize_keyword(data, "ENDSWITH".as_bytes(), TokenKind::EndsWith)?,
         b'N' => tokenize_null(data)?,
         c if c.is_ascii_digit() => tokenize_number(data)?,
-        _ => return Err(Error::UnsupportedCharacter(*b)),
+        _ => tokenize_identifier(data)?,
     };
     Ok((token, end))
+}
+
+#[inline]
+fn tokenize_identifier(data: &[u8]) -> Result<(TokenKind, u16)> {
+    match take_while(data, |c| !c.is_ascii_whitespace() && c != b')' && c != b']') {
+        Some(end) => Ok((TokenKind::Identifier, end)),
+        None => Err(Error::InvalidIdentifier(
+            String::from_utf8_lossy(data).to_string(),
+        )),
+    }
 }
 
 #[inline]
@@ -270,11 +287,11 @@ fn tokenize_string(data: &[u8], quote: u8) -> Result<(TokenKind, u16)> {
 }
 
 #[inline]
-fn tokenize_identifier(data: &[u8]) -> Result<(TokenKind, u16)> {
+fn tokenize_selector_path(data: &[u8]) -> Result<(TokenKind, u16)> {
     match take_while(&data[1..], |c| {
         !c.is_ascii_whitespace() && c != b')' && c != b']'
     }) {
-        Some(end) => Ok((TokenKind::Identifier, end + 1)),
+        Some(end) => Ok((TokenKind::SelectorPath, end + 1)),
         None => Err(Error::InvalidIdentifier(
             String::from_utf8_lossy(data).to_string(),
         )),
@@ -429,7 +446,7 @@ mod tests {
         parse_identifier,
         ".properties.first_name",
         Token {
-            kind: TokenKind::Identifier,
+            kind: TokenKind::SelectorPath,
             start: 0,
             len: 22
         }
@@ -608,7 +625,7 @@ mod tests {
         parse_add_ident,
         ".field1 + .field2",
         Token {
-            kind: TokenKind::Identifier,
+            kind: TokenKind::SelectorPath,
             start: 0,
             len: 7
         },
@@ -618,7 +635,7 @@ mod tests {
             len: 1
         },
         Token {
-            kind: TokenKind::Identifier,
+            kind: TokenKind::SelectorPath,
             start: 10,
             len: 7
         }
@@ -627,7 +644,7 @@ mod tests {
         parse_sub_ident,
         ".field1 - .field2",
         Token {
-            kind: TokenKind::Identifier,
+            kind: TokenKind::SelectorPath,
             start: 0,
             len: 7
         },
@@ -637,7 +654,7 @@ mod tests {
             len: 1
         },
         Token {
-            kind: TokenKind::Identifier,
+            kind: TokenKind::SelectorPath,
             start: 10,
             len: 7
         }
@@ -646,7 +663,7 @@ mod tests {
         parse_brackets,
         ".field1 - ( .field2 + .field3 )",
         Token {
-            kind: TokenKind::Identifier,
+            kind: TokenKind::SelectorPath,
             start: 0,
             len: 7
         },
@@ -661,7 +678,7 @@ mod tests {
             len: 1
         },
         Token {
-            kind: TokenKind::Identifier,
+            kind: TokenKind::SelectorPath,
             start: 12,
             len: 7
         },
@@ -671,7 +688,7 @@ mod tests {
             len: 1
         },
         Token {
-            kind: TokenKind::Identifier,
+            kind: TokenKind::SelectorPath,
             start: 22,
             len: 7
         },
@@ -691,8 +708,15 @@ mod tests {
             len: 2
         }
     );
-    lex_test!(FAIL: parse_bad_or, "|", Error::UnsupportedCharacter(b'|'));
-
+    lex_test!(
+        parse_bad_or,
+        "|",
+        Token {
+            kind: TokenKind::Identifier,
+            start: 0,
+            len: 1
+        }
+    );
     lex_test!(
         parse_in,
         " IN ",
@@ -776,7 +800,15 @@ mod tests {
             len: 2
         }
     );
-    lex_test!(FAIL: parse_bad_and, "&", Error::UnsupportedCharacter(b'&'));
+    lex_test!(
+        parse_bad_and,
+        "&",
+        Token {
+            kind: TokenKind::Identifier,
+            start: 0,
+            len: 1
+        }
+    );
     lex_test!(
         parse_not,
         "!",
@@ -784,6 +816,26 @@ mod tests {
             kind: TokenKind::Not,
             start: 0,
             len: 1
+        }
+    );
+
+    lex_test!(
+        parse_cast_expression,
+        ".field1 CAST datetime",
+        Token {
+            kind: TokenKind::SelectorPath,
+            start: 0,
+            len: 7
+        },
+        Token {
+            kind: TokenKind::Cast,
+            start: 8,
+            len: 4
+        },
+        Token {
+            kind: TokenKind::Identifier,
+            start: 13,
+            len: 8
         }
     );
 }
