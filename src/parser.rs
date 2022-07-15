@@ -190,8 +190,8 @@ impl<'a> Parser<'a> {
                 }
                 TokenKind::QuotedString => {
                     let start = tok.start as usize;
-                    // TODO: make tokenizer peekable, peek here to see if next is a cast
-                    // to build a constant Value instead fo casting each time
+                    // TODO: make tokenizer peekable, peek here to see if next is a COERCE
+                    // to build a constant Value instead fo COERCEing each time
                     let expression = Box::new(Str {
                         s: String::from_utf8_lossy(
                             &self.exp[start + 1..(start + tok.len as usize - 1)],
@@ -273,9 +273,11 @@ impl<'a> Parser<'a> {
                         self.parse_op(false, op)
                     }
                 }
-                TokenKind::Cast => {
-                    // special case, CAST MUST be followed by an Identifier that matches a static
-                    // pre-defined list of supported cast types.
+                TokenKind::Coerce => {
+                    // special case, COERCE MUST be followed by an Identifier that matches a static
+                    // pre-defined list of supported COERCE types.
+
+                    // COERCE <expression> <datatype>
                     let value = self.parse_value(true)?;
 
                     if let Some(value) = value {
@@ -286,10 +288,10 @@ impl<'a> Parser<'a> {
                                     &self.exp[start..start + tok.len as usize],
                                 );
                                 match ident.as_ref() {
-                                    "datetime" => Box::new(CastDateTime { value }),
+                                    "_datetime_" => Box::new(COERCEDateTime { value }),
                                     _ => {
                                         return Err(anyhow!(
-                                            "invalid CAST data type '{:?}'",
+                                            "invalid COERCE data type '{:?}'",
                                             &ident
                                         ))
                                     }
@@ -297,7 +299,7 @@ impl<'a> Parser<'a> {
                             }
                             _ => {
                                 return Err(anyhow!(
-                                    "invalid token type after CAST '{:?}'",
+                                    "invalid token type after COERCE '{:?}'",
                                     String::from_utf8_lossy(&self.exp[tok.start as usize..])
                                 ))
                             }
@@ -309,7 +311,7 @@ impl<'a> Parser<'a> {
                         }
                     } else {
                         return Err(anyhow!(
-                            "no value after CAST '{:?}'",
+                            "no value after COERCE '{:?}'",
                             String::from_utf8_lossy(&self.exp[tok.start as usize..])
                         ));
                     }
@@ -524,11 +526,11 @@ impl<'a> Parser<'a> {
 }
 
 #[derive(Debug)]
-struct CastDateTime {
+struct COERCEDateTime {
     value: BoxedExpression,
 }
 
-impl Expression for CastDateTime {
+impl Expression for COERCEDateTime {
     fn calculate(&self, json: &[u8]) -> Result<Value> {
         let value = self.value.calculate(json)?;
 
@@ -538,7 +540,10 @@ impl Expression for CastDateTime {
                 Err(_) => Ok(Value::Null),
                 Ok(dt) => Ok(Value::DateTime(dt)),
             },
-            value => Err(Error::UnsupportedCast(format!("{:?} CAST datetime", value))),
+            value => Err(Error::UnsupportedCOERCE(format!(
+                "{:?} COERCE datetime",
+                value
+            ))),
         }
     }
 }
@@ -951,8 +956,8 @@ pub enum Error {
     #[error("unsupported type comparison: {0}")]
     UnsupportedTypeComparison(String),
 
-    #[error("unsupported cast: {0}")]
-    UnsupportedCast(String),
+    #[error("unsupported COERCE: {0}")]
+    UnsupportedCOERCE(String),
 }
 
 #[cfg(test)]
@@ -1353,21 +1358,21 @@ mod tests {
     }
 
     #[test]
-    fn cast_datetime() -> anyhow::Result<()> {
+    fn coerce_datetime() -> anyhow::Result<()> {
         let src = r#"{"name":"2022-01-02"}"#.as_bytes();
-        let expression = "CAST .name datetime";
+        let expression = "COERCE .name _datetime_";
         let ex = Parser::parse(expression)?;
         let result = ex.calculate(src)?;
         assert_eq!(r#""2022-01-02T00:00:00.000000000Z""#, format!("{}", result));
 
         let src = r#"{"name":"2022-01-02"}"#.as_bytes();
-        let expression = "CAST .name datetime";
+        let expression = "COERCE .name _datetime_";
         let ex = Parser::parse(expression)?;
         let result = ex.calculate(src)?;
         assert_eq!(r#""2022-01-02T00:00:00.000000000Z""#, format!("{}", result));
 
         let src = r#"{"dt1":"2022-01-02","dt2":"2022-01-02"}"#.as_bytes();
-        let expression = "CAST .dt1 datetime == CAST .dt2 datetime";
+        let expression = "COERCE .dt1 _datetime_ == COERCE .dt2 _datetime_";
         let ex = Parser::parse(expression)?;
         let result = ex.calculate(src)?;
         assert_eq!(Value::Bool(true), result);
@@ -1375,7 +1380,7 @@ mod tests {
         let src =
             r#"{"dt1":"2022-07-14T17:50:08.318426000Z","dt2":"2022-07-14T17:50:08.318426001Z"}"#
                 .as_bytes();
-        let expression = "CAST .dt1 datetime == CAST .dt2 datetime && true == true";
+        let expression = "COERCE .dt1 _datetime_ == COERCE .dt2 _datetime_ && true == true";
         let ex = Parser::parse(expression)?;
         let result = ex.calculate(src)?;
         assert_eq!(Value::Bool(false), result);
@@ -1383,7 +1388,7 @@ mod tests {
         let src =
             r#"{"dt1":"2022-07-14T17:50:08.318426000Z","dt2":"2022-07-14T17:50:08.318426001Z"}"#
                 .as_bytes();
-        let expression = "(CAST .dt1 datetime == CAST .dt2 datetime) && true == true";
+        let expression = "(COERCE .dt1 _datetime_ == COERCE .dt2 _datetime_) && true == true";
         let ex = Parser::parse(expression)?;
         let result = ex.calculate(src)?;
         assert_eq!(Value::Bool(false), result);
@@ -1391,7 +1396,7 @@ mod tests {
         let src =
             r#"{"dt1":"2022-07-14T17:50:08.318426000Z","dt2":"2022-07-14T17:50:08.318426001Z"}"#
                 .as_bytes();
-        let expression = "(CAST .dt1 datetime == CAST .dt2 datetime) && true == true";
+        let expression = "(COERCE .dt1 _datetime_ == COERCE .dt2 _datetime_) && true == true";
         let ex = Parser::parse(expression)?;
         let result = ex.calculate(src)?;
         assert_eq!(Value::Bool(false), result);
@@ -1399,7 +1404,7 @@ mod tests {
         let src =
             r#"{"dt1":"2022-07-14T17:50:08.318426000Z","dt2":"2022-07-14T17:50:08.318426001Z"}"#
                 .as_bytes();
-        let expression = "(CAST .dt1 datetime) == (CAST .dt2 datetime) && true == true";
+        let expression = "(COERCE .dt1 _datetime_) == (COERCE .dt2 _datetime_) && true == true";
         let ex = Parser::parse(expression)?;
         let result = ex.calculate(src)?;
         assert_eq!(Value::Bool(false), result);

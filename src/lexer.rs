@@ -70,7 +70,7 @@ pub enum TokenKind {
     Comma,
     OpenParen,
     CloseParen,
-    Cast,
+    Coerce,
     Identifier,
 }
 
@@ -215,18 +215,19 @@ fn tokenize_single_token(data: &[u8]) -> Result<(TokenKind, u16)> {
         b'&' if data.get(1) == Some(&b'&') => (TokenKind::And, 2),
         b'|' if data.get(1) == Some(&b'|') => (TokenKind::Or, 2),
         b'O' => tokenize_keyword(data, "OR".as_bytes(), TokenKind::Or)?,
-        b'C' if data.get(1) == Some(&b'O') => {
+        b'C' if data.get(1) == Some(&b'O') && data.get(2) == Some(&b'N') => {
             tokenize_keyword(data, "CONTAINS".as_bytes(), TokenKind::Contains)?
         }
-        b'C' if data.get(1) == Some(&b'A') => {
-            tokenize_keyword(data, "CAST".as_bytes(), TokenKind::Cast)?
+        b'C' if data.get(1) == Some(&b'O') && data.get(2) == Some(&b'E') => {
+            tokenize_keyword(data, "COERCE".as_bytes(), TokenKind::Coerce)?
         }
         b'I' => tokenize_keyword(data, "IN".as_bytes(), TokenKind::In)?,
         b'S' => tokenize_keyword(data, "STARTSWITH".as_bytes(), TokenKind::StartsWith)?,
         b'E' => tokenize_keyword(data, "ENDSWITH".as_bytes(), TokenKind::EndsWith)?,
         b'N' => tokenize_null(data)?,
         c if c.is_ascii_digit() => tokenize_number(data)?,
-        _ => tokenize_identifier(data)?,
+        b'_' => tokenize_identifier(data)?,
+        _ => return Err(Error::UnsupportedCharacter(*b)),
     };
     Ok((token, end))
 }
@@ -708,15 +709,7 @@ mod tests {
             len: 2
         }
     );
-    lex_test!(
-        parse_bad_or,
-        "|",
-        Token {
-            kind: TokenKind::Identifier,
-            start: 0,
-            len: 1
-        }
-    );
+    lex_test!(FAIL: parse_bad_or, "|", Error::UnsupportedCharacter(b'|'));
     lex_test!(
         parse_in,
         " IN ",
@@ -800,15 +793,7 @@ mod tests {
             len: 2
         }
     );
-    lex_test!(
-        parse_bad_and,
-        "&",
-        Token {
-            kind: TokenKind::Identifier,
-            start: 0,
-            len: 1
-        }
-    );
+    lex_test!(FAIL: parse_bad_and, "&", Error::UnsupportedCharacter(b'&'));
     lex_test!(
         parse_not,
         "!",
@@ -821,21 +806,21 @@ mod tests {
 
     lex_test!(
         parse_cast_expression,
-        "CAST .field1 datetime",
+        "COERCE .field1 _datetime_",
         Token {
-            kind: TokenKind::Cast,
+            kind: TokenKind::Coerce,
             start: 0,
-            len: 4
+            len: 6
         },
         Token {
             kind: TokenKind::SelectorPath,
-            start: 5,
+            start: 7,
             len: 7
         },
         Token {
             kind: TokenKind::Identifier,
-            start: 13,
-            len: 8
+            start: 15,
+            len: 10
         }
     );
 }

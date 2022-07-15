@@ -11,13 +11,13 @@ use std::result::Result as StdResult;
 fn benchmark_lexer(c: &mut Criterion) {
     let mut group = c.benchmark_group("lex_individual");
     for (name, src) in [
-        ("identifier", ".field1"),
+        ("selector_path", ".field1"),
         ("string", r#""My Name""#),
         ("number", "123.34"),
         ("bool", "true"),
-        ("single_ident", "="),
-        ("double_ident", ">="),
-        ("string_ident", "CONTAINS"),
+        ("single_tok", "="),
+        ("double_tok", ">="),
+        ("contians_tok", "CONTAINS"),
     ]
     .iter()
     {
@@ -66,9 +66,9 @@ fn benchmark_expressions(c: &mut Criterion) {
             r#".first_name + " " + .last_name"#,
         ),
         (
-            "cast_dt_cast_dt_eq",
+            "coerce_dt_coerce_dt_eq",
             r#"{"dt1":"2022-07-15T00:00:00.000000000Z","dt2":"2022-07-15"}"#.as_bytes(),
-            r#"CAST .dt1 datetime == CAST .dt2 datetime"#,
+            r#"COERCE .dt1 _datetime_ == COERCE .dt2 _datetime_"#,
         ),
     ]
     .iter()
