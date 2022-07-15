@@ -97,7 +97,7 @@ fn benchmark_expressions(c: &mut Criterion) {
             ".properties.employees > 20",
         ),
         (
-            "not_paren_not",
+            "not_paren_sp_not_sp",
             r#"{"f1":true,"f2":false}"#.as_bytes(),
             "!(.f1 != .f2)",
         ),
