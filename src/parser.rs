@@ -254,13 +254,18 @@ impl<'a> Parser<'a> {
                 TokenKind::OpenBracket => {
                     let mut arr = Vec::new();
 
-                    while let Some(v) = self.parse_value(false)? {
+                    while let Some(v) = self.parse_value(true)? {
                         arr.push(v);
                     }
-                    let arr = Arr { arr };
-                    self.parse_op(false, Box::new(arr))
+                    let arr = Box::new(Arr { arr });
+
+                    if return_value_now {
+                        Ok(Some(arr))
+                    } else {
+                        self.parse_op(false, arr)
+                    }
                 }
-                TokenKind::Comma => match self.parse_value(false)? {
+                TokenKind::Comma => match self.parse_value(return_value_now)? {
                     Some(v) => Ok(Some(v)),
                     None => Err(anyhow!("value required after comma: {:?}", tok)),
                 },
@@ -863,6 +868,7 @@ impl Expression for Contains {
         let right = self.right.calculate(json)?;
         match (left, right) {
             (Value::String(s1), Value::String(s2)) => Ok(Value::Bool(s1.contains(&s2))),
+            (Value::Array(arr1), v) => Ok(Value::Bool(arr1.contains(&v))),
             (l, r) => Err(Error::UnsupportedTypeComparison(format!(
                 "{:?} CONTAINS {:?}",
                 l, r
@@ -1168,6 +1174,18 @@ mod tests {
         assert_eq!(Value::Bool(false), result);
 
         let ex = Parser::parse(r#""team" CONTAINS "ea""#)?;
+        let result = ex.calculate("".as_bytes())?;
+        assert_eq!(Value::Bool(true), result);
+
+        let ex = Parser::parse(r#"["ea"] CONTAINS "ea""#)?;
+        let result = ex.calculate("".as_bytes())?;
+        assert_eq!(Value::Bool(true), result);
+
+        let ex = Parser::parse(r#"["nope"] CONTAINS "ea""#)?;
+        let result = ex.calculate("".as_bytes())?;
+        assert_eq!(Value::Bool(false), result);
+
+        let ex = Parser::parse(r#"["a",["b","a"]] CONTAINS ["b","a"]"#)?;
         let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(true), result);
         Ok(())
