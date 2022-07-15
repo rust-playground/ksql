@@ -16,20 +16,22 @@
 
 use crate::lexer::{TokenKind, Tokenizer};
 use anyhow::anyhow;
-use chrono::{DateTime, FixedOffset, SecondsFormat};
+use chrono::{DateTime, SecondsFormat, Utc};
 use gjson::Kind;
+use serde::Serialize;
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Display, Formatter};
 use thiserror::Error;
 
 /// Represents the calculated Expression result.
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Serialize)]
+#[serde(untagged)]
 pub enum Value {
     Null,
     String(String),
     Number(f64),
     Bool(bool),
-    DateTime(DateTime<FixedOffset>), // What to put here arg! do we preserve the original zone etc..?
+    DateTime(DateTime<Utc>), // What to put here arg! do we preserve the original zone etc..?
     Object(BTreeMap<String, Value>),
     Array(Vec<Value>),
 }
@@ -536,7 +538,7 @@ impl Expression for COERCEDateTime {
 
         match value {
             // TODO: Add more variants
-            Value::String(ref s) => match anydate::parse(s) {
+            Value::String(ref s) => match anydate::parse_utc(s) {
                 Err(_) => Ok(Value::Null),
                 Ok(dt) => Ok(Value::DateTime(dt)),
             },

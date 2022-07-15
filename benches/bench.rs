@@ -124,7 +124,7 @@ fn benchmark_display(c: &mut Criterion) {
     for (name, val) in [
         ("null", Value::Null),
         ("string", Value::String("string".to_string())),
-        ("datetime", Value::DateTime(Utc::now().into())),
+        ("datetime", Value::DateTime(Utc::now())),
         ("number", Value::Number(64.1)),
         ("bool", Value::Bool(true)),
         ("object", Value::Object(m)),
@@ -147,9 +147,42 @@ fn benchmark_display(c: &mut Criterion) {
     group.finish();
 }
 
+fn benchmark_serialize_json(c: &mut Criterion) {
+    let mut m = BTreeMap::new();
+    m.insert("key".to_string(), Value::String("value".to_string()));
+    m.insert("key2".to_string(), Value::String("value2".to_string()));
+
+    let mut group = c.benchmark_group("serialize_json");
+    for (name, val) in [
+        ("null", Value::Null),
+        ("string", Value::String("string".to_string())),
+        ("datetime", Value::DateTime(Utc::now())),
+        ("number", Value::Number(64.1)),
+        ("bool", Value::Bool(true)),
+        ("object", Value::Object(m)),
+        (
+            "array",
+            Value::Array(vec![
+                Value::String("string".to_string()),
+                Value::Number(64.1),
+            ]),
+        ),
+    ]
+    .iter()
+    {
+        group.bench_function(*name, |b| {
+            b.iter(|| {
+                let _res = serde_json::to_string(&val);
+            })
+        });
+    }
+    group.finish();
+}
+
 criterion_group!(
     benches,
     benchmark_display,
+    benchmark_serialize_json,
     benchmark_expressions,
     benchmark_lexer
 );
