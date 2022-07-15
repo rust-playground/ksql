@@ -1,6 +1,7 @@
 #[macro_use]
 extern crate criterion;
 
+use chrono::Utc;
 use criterion::{Criterion, Throughput};
 use ksql::lexer::{Token, Tokenizer};
 use ksql::parser::{Parser, Value};
@@ -31,10 +32,7 @@ fn benchmark_lexer(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("lex_expression");
     for (name, src) in [
-        (
-            "string_ident_add_multi",
-            r#".first_name + " " + .last_name"#,
-        ),
+        ("string_sp_add_multi", r#".first_name + " " + .last_name"#),
         ("math", r#"1 + 1 / 2"#),
         ("math_paren", r#"(1 + 1) / 2"#),
     ]
@@ -56,9 +54,9 @@ fn benchmark_expressions(c: &mut Criterion) {
     let mut group = c.benchmark_group("add");
     for (name, src, expression) in [
         ("num_num", "".as_bytes(), "1 + 1"),
-        ("ident_num", r#"{"field1":1}"#.as_bytes(), ".field1 + 1"),
+        ("sp_num", r#"{"field1":1}"#.as_bytes(), ".field1 + 1"),
         (
-            "ident_ident",
+            "sp_sp",
             r#"{"field1":1,"field2":1}"#.as_bytes(),
             ".field + .field2",
         ),
@@ -66,6 +64,11 @@ fn benchmark_expressions(c: &mut Criterion) {
             "fname_lname",
             r#"{"first_name":"Joey","last_name":"Bloggs"}"#.as_bytes(),
             r#".first_name + " " + .last_name"#,
+        ),
+        (
+            "cast_dt_cast_dt_eq",
+            r#"{"dt1":"2022-07-15T00:00:00.000000000Z","dt2":"2022-07-15"}"#.as_bytes(),
+            r#"CAST .dt1 datetime == CAST .dt2 datetime"#,
         ),
     ]
     .iter()
@@ -84,7 +87,7 @@ fn benchmark_expressions(c: &mut Criterion) {
     for (name, src, expression) in [
         ("paren_div", "".as_bytes(), "(1 + 1) / 2"),
         (
-            "paren_div_idents",
+            "paren_div_sps",
             r#"{"field1":1,"field2":1,"field3":2}"#.as_bytes(),
             "(.field1 + .field2) / .field3",
         ),
@@ -121,6 +124,7 @@ fn benchmark_display(c: &mut Criterion) {
     for (name, val) in [
         ("null", Value::Null),
         ("string", Value::String("string".to_string())),
+        ("datetime", Value::DateTime(Utc::now().into())),
         ("number", Value::Number(64.1)),
         ("bool", Value::Bool(true)),
         ("object", Value::Object(m)),

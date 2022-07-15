@@ -169,65 +169,150 @@ impl<'a> Parser<'a> {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     fn parse_value(&mut self, return_value_now: bool) -> anyhow::Result<Option<BoxedExpression>> {
         if let Some(tok) = self.tokenizer.next() {
             let tok = tok?;
-            dbg!(&tok.kind);
             match tok.kind {
                 TokenKind::SelectorPath => {
                     let start = tok.start as usize;
-                    self.parse_op(Box::new(SelectorPath {
+                    let expression = Box::new(SelectorPath {
                         ident: String::from_utf8_lossy(
                             &self.exp[start + 1..(start + tok.len as usize)],
                         )
                         .into_owned(),
-                    }))
+                    });
+                    if return_value_now {
+                        Ok(Some(expression))
+                    } else {
+                        self.parse_op(false, expression)
+                    }
                 }
                 TokenKind::QuotedString => {
                     let start = tok.start as usize;
                     // TODO: make tokenizer peekable, peek here to see if next is a cast
                     // to build a constant Value instead fo casting each time
-                    self.parse_op(Box::new(Str {
+                    let expression = Box::new(Str {
                         s: String::from_utf8_lossy(
                             &self.exp[start + 1..(start + tok.len as usize - 1)],
                         )
                         .into_owned(),
-                    }))
+                    });
+                    if return_value_now {
+                        Ok(Some(expression))
+                    } else {
+                        self.parse_op(false, expression)
+                    }
                 }
                 TokenKind::Number => {
                     let start = tok.start as usize;
-                    self.parse_op(Box::new(Num {
+                    let expression = Box::new(Num {
                         n: String::from_utf8_lossy(&self.exp[start..start + tok.len as usize])
                             .parse()?,
-                    }))
+                    });
+                    if return_value_now {
+                        Ok(Some(expression))
+                    } else {
+                        self.parse_op(false, expression)
+                    }
                 }
-                TokenKind::BooleanTrue => self.parse_op(Box::new(Bool { b: true })),
-                TokenKind::BooleanFalse => self.parse_op(Box::new(Bool { b: false })),
-                TokenKind::Null => self.parse_op(Box::new(Null {})),
+                TokenKind::BooleanTrue => {
+                    // TODO: Investigate using Arc instead of Bax to share one constant like this?
+                    let expression = Box::new(Bool { b: true });
+                    if return_value_now {
+                        Ok(Some(expression))
+                    } else {
+                        self.parse_op(false, expression)
+                    }
+                }
+                TokenKind::BooleanFalse => {
+                    // TODO: Investigate using Arc instead of Bax to share one constant like this?
+                    let expression = Box::new(Bool { b: false });
+                    if return_value_now {
+                        Ok(Some(expression))
+                    } else {
+                        self.parse_op(false, expression)
+                    }
+                }
+                TokenKind::Null => {
+                    // TODO: Investigate using Arc instead of Bax to share one constant like this?
+                    let expression = Box::new(Null {});
+                    if return_value_now {
+                        Ok(Some(expression))
+                    } else {
+                        self.parse_op(false, expression)
+                    }
+                }
                 TokenKind::Not => {
                     let v = self
-                        .parse_value()?
+                        .parse_value(true)?
                         .map_or_else(|| Err(anyhow!("no identifier after !")), Ok)?;
-                    self.parse_op(Box::new(Not { value: v }))
+                    self.parse_op(false, Box::new(Not { value: v }))
                 }
                 TokenKind::OpenBracket => {
                     let mut arr = Vec::new();
 
-                    while let Some(v) = self.parse_value()? {
+                    while let Some(v) = self.parse_value(false)? {
                         arr.push(v);
                     }
                     let arr = Arr { arr };
-                    self.parse_op(Box::new(arr))
+                    self.parse_op(false, Box::new(arr))
                 }
-                TokenKind::Comma => match self.parse_value()? {
+                TokenKind::Comma => match self.parse_value(false)? {
                     Some(v) => Ok(Some(v)),
                     None => Err(anyhow!("value required after comma: {:?}", tok)),
                 },
                 TokenKind::OpenParen => {
                     let op = self
-                        .parse_value()?
+                        .parse_value(false)?
                         .map_or_else(|| Err(anyhow!("no value between ()")), Ok)?;
-                    self.parse_op(op)
+
+                    if return_value_now {
+                        Ok(Some(op))
+                    } else {
+                        self.parse_op(false, op)
+                    }
+                }
+                TokenKind::Cast => {
+                    // special case, CAST MUST be followed by an Identifier that matches a static
+                    // pre-defined list of supported cast types.
+                    let value = self.parse_value(true)?;
+
+                    if let Some(value) = value {
+                        let op = match self.tokenizer.next() {
+                            Some(Ok(tok)) if tok.kind == TokenKind::Identifier => {
+                                let start = tok.start as usize;
+                                let ident = String::from_utf8_lossy(
+                                    &self.exp[start..start + tok.len as usize],
+                                );
+                                match ident.as_ref() {
+                                    "datetime" => Box::new(CastDateTime { value }),
+                                    _ => {
+                                        return Err(anyhow!(
+                                            "invalid CAST data type '{:?}'",
+                                            &ident
+                                        ))
+                                    }
+                                }
+                            }
+                            _ => {
+                                return Err(anyhow!(
+                                    "invalid token type after CAST '{:?}'",
+                                    String::from_utf8_lossy(&self.exp[tok.start as usize..])
+                                ))
+                            }
+                        };
+                        if return_value_now {
+                            Ok(Some(op))
+                        } else {
+                            self.parse_op(false, op)
+                        }
+                    } else {
+                        return Err(anyhow!(
+                            "no value after CAST '{:?}'",
+                            String::from_utf8_lossy(&self.exp[tok.start as usize..])
+                        ));
+                    }
                 }
                 TokenKind::CloseParen => Err(anyhow!("no value between ()")),
                 TokenKind::CloseBracket => Ok(None),
@@ -246,67 +331,116 @@ impl<'a> Parser<'a> {
     ) -> anyhow::Result<Option<BoxedExpression>> {
         if let Some(tok) = self.tokenizer.next() {
             let tok = tok?;
-            dbg!(&tok.kind);
             match tok.kind {
                 TokenKind::In => {
                     let right = self
-                        .parse_value()?
+                        .parse_value(false)?
                         .map_or_else(|| Err(anyhow!("no value after IN")), Ok)?;
-                    Ok(Some(Box::new(In { left: value, right })))
+                    let expression = Box::new(In { left: value, right });
+                    if return_value_now {
+                        Ok(Some(expression))
+                    } else {
+                        self.parse_op(false, expression)
+                    }
                 }
                 TokenKind::Contains => {
                     let right = self
-                        .parse_value()?
+                        .parse_value(false)?
                         .map_or_else(|| Err(anyhow!("no value after CONTAINS")), Ok)?;
-                    Ok(Some(Box::new(Contains { left: value, right })))
+                    let expression = Box::new(Contains { left: value, right });
+                    if return_value_now {
+                        Ok(Some(expression))
+                    } else {
+                        self.parse_op(false, expression)
+                    }
                 }
                 TokenKind::StartsWith => {
                     let right = self
-                        .parse_value()?
+                        .parse_value(false)?
                         .map_or_else(|| Err(anyhow!("no value after STARTSWITH")), Ok)?;
-                    Ok(Some(Box::new(StartsWith { left: value, right })))
+                    let expression = Box::new(StartsWith { left: value, right });
+                    if return_value_now {
+                        Ok(Some(expression))
+                    } else {
+                        self.parse_op(false, expression)
+                    }
                 }
                 TokenKind::EndsWith => {
                     let right = self
-                        .parse_value()?
+                        .parse_value(false)?
                         .map_or_else(|| Err(anyhow!("no value after ENDSWITH")), Ok)?;
-                    Ok(Some(Box::new(EndsWith { left: value, right })))
+                    let expression = Box::new(EndsWith { left: value, right });
+                    if return_value_now {
+                        Ok(Some(expression))
+                    } else {
+                        self.parse_op(false, expression)
+                    }
                 }
                 TokenKind::And => {
                     let right = self
-                        .parse_value()?
+                        .parse_value(false)?
                         .map_or_else(|| Err(anyhow!("no value after AND")), Ok)?;
-                    Ok(Some(Box::new(And { left: value, right })))
+                    let expression = Box::new(And { left: value, right });
+                    if return_value_now {
+                        Ok(Some(expression))
+                    } else {
+                        self.parse_op(false, expression)
+                    }
                 }
                 TokenKind::Or => {
                     let right = self
-                        .parse_value()?
+                        .parse_value(true)?
                         .map_or_else(|| Err(anyhow!("no value after OR")), Ok)?;
-                    Ok(Some(Box::new(Or { left: value, right })))
+                    let expression = Box::new(Or { left: value, right });
+                    if return_value_now {
+                        Ok(Some(expression))
+                    } else {
+                        self.parse_op(false, expression)
+                    }
                 }
                 TokenKind::Gt => {
                     let right = self
-                        .parse_value()?
+                        .parse_value(true)?
                         .map_or_else(|| Err(anyhow!("no value after >")), Ok)?;
-                    Ok(Some(Box::new(Gt { left: value, right })))
+                    let expression = Box::new(Gt { left: value, right });
+                    if return_value_now {
+                        Ok(Some(expression))
+                    } else {
+                        self.parse_op(false, expression)
+                    }
                 }
                 TokenKind::Gte => {
                     let right = self
-                        .parse_value()?
+                        .parse_value(true)?
                         .map_or_else(|| Err(anyhow!("no value after >=")), Ok)?;
-                    Ok(Some(Box::new(Gte { left: value, right })))
+                    let expression = Box::new(Gte { left: value, right });
+                    if return_value_now {
+                        Ok(Some(expression))
+                    } else {
+                        self.parse_op(false, expression)
+                    }
                 }
                 TokenKind::Lt => {
                     let right = self
-                        .parse_value()?
+                        .parse_value(true)?
                         .map_or_else(|| Err(anyhow!("no value after <")), Ok)?;
-                    Ok(Some(Box::new(Lt { left: value, right })))
+                    let expression = Box::new(Lt { left: value, right });
+                    if return_value_now {
+                        Ok(Some(expression))
+                    } else {
+                        self.parse_op(false, expression)
+                    }
                 }
                 TokenKind::Lte => {
                     let right = self
-                        .parse_value()?
+                        .parse_value(true)?
                         .map_or_else(|| Err(anyhow!("no value after <=")), Ok)?;
-                    Ok(Some(Box::new(Lte { left: value, right })))
+                    let expression = Box::new(Lte { left: value, right });
+                    if return_value_now {
+                        Ok(Some(expression))
+                    } else {
+                        self.parse_op(false, expression)
+                    }
                 }
                 TokenKind::Equals => {
                     // yes need to parse RHS of equals
@@ -317,37 +451,47 @@ impl<'a> Parser<'a> {
                     // parse value, and when it's ok to continue parsing down the nested chain.
                     //
                     let right = self
-                        .parse_value()?
+                        .parse_value(true)?
                         .map_or_else(|| Err(anyhow!("no value after ==")), Ok)?;
-                    Ok(Some(Box::new(Eq { left: value, right })))
+
+                    let expression = Box::new(Eq { left: value, right });
+                    if return_value_now {
+                        Ok(Some(expression))
+                    } else {
+                        self.parse_op(false, expression)
+                    }
                 }
                 TokenKind::Add => {
                     let right = self
-                        .parse_value()?
+                        .parse_value(false)?
                         .map_or_else(|| Err(anyhow!("no value after +")), Ok)?;
-                    Ok(Some(Box::new(Add { left: value, right })))
+                    let expression = Box::new(Add { left: value, right });
+                    self.parse_op(false, expression)
                 }
                 TokenKind::Subtract => {
                     let right = self
-                        .parse_value()?
+                        .parse_value(false)?
                         .map_or_else(|| Err(anyhow!("no value after -")), Ok)?;
-                    Ok(Some(Box::new(Sub { left: value, right })))
+                    let expression = Box::new(Sub { left: value, right });
+                    self.parse_op(false, expression)
                 }
                 TokenKind::Multiply => {
                     let right = self
-                        .parse_value()?
+                        .parse_value(false)?
                         .map_or_else(|| Err(anyhow!("no value after *")), Ok)?;
-                    Ok(Some(Box::new(Mult { left: value, right })))
+                    let expression = Box::new(Mult { left: value, right });
+                    self.parse_op(false, expression)
                 }
                 TokenKind::Divide => {
                     let right = self
-                        .parse_value()?
+                        .parse_value(false)?
                         .map_or_else(|| Err(anyhow!("no value after /")), Ok)?;
-                    Ok(Some(Box::new(Div { left: value, right })))
+                    let expression = Box::new(Div { left: value, right });
+                    self.parse_op(false, expression)
                 }
                 TokenKind::Not => {
                     let op = self
-                        .parse_op(value)
+                        .parse_op(false, value)
                         .map_or_else(|_| Err(anyhow!("invalid operation after !")), Ok)?;
                     if let Some(value) = op {
                         let n = Not { value };
@@ -358,33 +502,9 @@ impl<'a> Parser<'a> {
                 }
                 TokenKind::OpenParen => {
                     let op = self
-                        .parse_value()?
+                        .parse_value(false)?
                         .map_or_else(|| Err(anyhow!("no value between ()")), Ok)?;
-                    self.parse_op(op)
-                }
-                TokenKind::Cast => {
-                    // special case, CAST MUST be followed by an Identifier that matches a static
-                    // pre-defined list of supported cast types.
-
-                    // TODO: call parse_op with CastDateTime instead of returning?
-                    let op = match self.tokenizer.next() {
-                        Some(Ok(tok)) if tok.kind == TokenKind::Identifier => {
-                            let start = tok.start as usize;
-                            let ident =
-                                String::from_utf8_lossy(&self.exp[start..start + tok.len as usize]);
-                            match ident.as_ref() {
-                                "datetime" => Box::new(CastDateTime { value }),
-                                _ => return Err(anyhow!("invalid CAST data type '{:?}'", &ident)),
-                            }
-                        }
-                        _ => {
-                            return Err(anyhow!(
-                                "invalid token type after CAST '{:?}'",
-                                String::from_utf8_lossy(&self.exp[tok.start as usize..])
-                            ))
-                        }
-                    };
-                    self.parse_op(op)
+                    self.parse_op(false, op)
                 }
                 TokenKind::CloseBracket | TokenKind::CloseParen | TokenKind::Comma => {
                     Ok(Some(value))
@@ -1013,7 +1133,7 @@ mod tests {
     fn and() -> anyhow::Result<()> {
         let ex = Parser::parse("true == true && false == false")?;
         let result = ex.calculate("".as_bytes())?;
-        assert_eq!(Value::Bool(false), result);
+        assert_eq!(Value::Bool(true), result);
 
         let ex = Parser::parse("true && true")?;
         let result = ex.calculate("".as_bytes())?;
@@ -1235,13 +1355,19 @@ mod tests {
     #[test]
     fn cast_datetime() -> anyhow::Result<()> {
         let src = r#"{"name":"2022-01-02"}"#.as_bytes();
-        let expression = ".name CAST datetime";
+        let expression = "CAST .name datetime";
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate(src)?;
+        assert_eq!(r#""2022-01-02T00:00:00.000000000Z""#, format!("{}", result));
+
+        let src = r#"{"name":"2022-01-02"}"#.as_bytes();
+        let expression = "CAST .name datetime";
         let ex = Parser::parse(expression)?;
         let result = ex.calculate(src)?;
         assert_eq!(r#""2022-01-02T00:00:00.000000000Z""#, format!("{}", result));
 
         let src = r#"{"dt1":"2022-01-02","dt2":"2022-01-02"}"#.as_bytes();
-        let expression = ".dt1 CAST datetime == .dt2 CAST datetime";
+        let expression = "CAST .dt1 datetime == CAST .dt2 datetime";
         let ex = Parser::parse(expression)?;
         let result = ex.calculate(src)?;
         assert_eq!(Value::Bool(true), result);
@@ -1249,18 +1375,34 @@ mod tests {
         let src =
             r#"{"dt1":"2022-07-14T17:50:08.318426000Z","dt2":"2022-07-14T17:50:08.318426001Z"}"#
                 .as_bytes();
-        let expression = "(.dt1 CAST datetime == .dt2 CAST datetime) && true == true";
+        let expression = "CAST .dt1 datetime == CAST .dt2 datetime && true == true";
         let ex = Parser::parse(expression)?;
         let result = ex.calculate(src)?;
         assert_eq!(Value::Bool(false), result);
 
-        // let src =
-        //     r#"{"dt1":"2022-07-14T17:50:08.318426000Z","dt2":"2022-07-14T17:50:08.318426001Z"}"#
-        //         .as_bytes();
-        // let expression = ".dt1 CAST datetime == .dt2 CAST datetime && true == true";
-        // let ex = Parser::parse(expression)?;
-        // let result = ex.calculate(src)?;
-        // assert_eq!(Value::Bool(false), result);
+        let src =
+            r#"{"dt1":"2022-07-14T17:50:08.318426000Z","dt2":"2022-07-14T17:50:08.318426001Z"}"#
+                .as_bytes();
+        let expression = "(CAST .dt1 datetime == CAST .dt2 datetime) && true == true";
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate(src)?;
+        assert_eq!(Value::Bool(false), result);
+
+        let src =
+            r#"{"dt1":"2022-07-14T17:50:08.318426000Z","dt2":"2022-07-14T17:50:08.318426001Z"}"#
+                .as_bytes();
+        let expression = "(CAST .dt1 datetime == CAST .dt2 datetime) && true == true";
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate(src)?;
+        assert_eq!(Value::Bool(false), result);
+
+        let src =
+            r#"{"dt1":"2022-07-14T17:50:08.318426000Z","dt2":"2022-07-14T17:50:08.318426001Z"}"#
+                .as_bytes();
+        let expression = "(CAST .dt1 datetime) == (CAST .dt2 datetime) && true == true";
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate(src)?;
+        assert_eq!(Value::Bool(false), result);
         Ok(())
     }
 }

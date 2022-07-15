@@ -821,16 +821,16 @@ mod tests {
 
     lex_test!(
         parse_cast_expression,
-        ".field1 CAST datetime",
-        Token {
-            kind: TokenKind::SelectorPath,
-            start: 0,
-            len: 7
-        },
+        "CAST .field1 datetime",
         Token {
             kind: TokenKind::Cast,
-            start: 8,
+            start: 0,
             len: 4
+        },
+        Token {
+            kind: TokenKind::SelectorPath,
+            start: 5,
+            len: 7
         },
         Token {
             kind: TokenKind::Identifier,
