@@ -51,7 +51,7 @@ fn benchmark_lexer(c: &mut Criterion) {
 }
 
 fn benchmark_expressions_execution(c: &mut Criterion) {
-    let mut group = c.benchmark_group("add");
+    let mut group = c.benchmark_group("expressions_execution_add");
     for (name, src, expression) in [
         ("num_num", "".as_bytes(), "1 + 1"),
         ("sp_num", r#"{"field1":1}"#.as_bytes(), ".field1 + 1"),
@@ -83,7 +83,7 @@ fn benchmark_expressions_execution(c: &mut Criterion) {
     }
     group.finish();
 
-    let mut group = c.benchmark_group("complex");
+    let mut group = c.benchmark_group("expressions_execution_complex");
     for (name, src, expression) in [
         ("paren_div", "".as_bytes(), "(1 + 1) / 2"),
         (
@@ -116,7 +116,7 @@ fn benchmark_expressions_execution(c: &mut Criterion) {
 }
 
 fn benchmark_expressions_parsing(c: &mut Criterion) {
-    let mut group = c.benchmark_group("add");
+    let mut group = c.benchmark_group("expressions_parsing_add");
     for (name, expression) in [
         ("num_num", "1 + 1"),
         ("sp_num", ".field1 + 1"),
@@ -138,7 +138,7 @@ fn benchmark_expressions_parsing(c: &mut Criterion) {
     }
     group.finish();
 
-    let mut group = c.benchmark_group("complex");
+    let mut group = c.benchmark_group("expressions_parsing_complex");
     for (name, expression) in [
         ("paren_div", "(1 + 1) / 2"),
         ("paren_div_sps", "(.field1 + .field2) / .field3"),
