@@ -221,8 +221,15 @@ impl<'a> Parser<'a> {
             TokenKind::Coerce => {
                 // COERCE <expression> _<datatype>_
                 let next_token = self.next_operator_token(token)?;
+                let const_eligible = match next_token.kind {
+                    TokenKind::QuotedString
+                    | TokenKind::Number
+                    | TokenKind::BooleanFalse
+                    | TokenKind::BooleanTrue
+                    | TokenKind::Null => true,
+                    _ => false,
+                };
                 let value = self.parse_value(next_token)?;
-
                 if let Some(token) = self.tokenizer.next() {
                     let token = token?;
                     let start = token.start as usize;
@@ -231,7 +238,16 @@ impl<'a> Parser<'a> {
                         let ident =
                             String::from_utf8_lossy(&self.exp[start..start + token.len as usize]);
                         match ident.as_ref() {
-                            "_datetime_" => Ok(Box::new(COERCEDateTime { value })),
+                            "_datetime_" => {
+                                let expression = COERCEDateTime { value };
+                                if const_eligible {
+                                    Ok(Box::new(CoercedConst {
+                                        value: expression.calculate(&[])?,
+                                    }))
+                                } else {
+                                    Ok(Box::new(expression))
+                                }
+                            }
                             _ => return Err(anyhow!("invalid COERCE data type '{:?}'", &ident)),
                         }
                     } else {
@@ -617,6 +633,17 @@ impl Expression for Lte {
                 l, r
             ))),
         }
+    }
+}
+
+#[derive(Debug)]
+struct CoercedConst {
+    value: Value,
+}
+
+impl Expression for CoercedConst {
+    fn calculate(&self, _json: &[u8]) -> Result<Value> {
+        Ok(self.value.clone())
     }
 }
 

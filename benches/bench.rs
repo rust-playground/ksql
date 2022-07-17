@@ -66,7 +66,17 @@ fn benchmark_expressions_execution(c: &mut Criterion) {
             r#".first_name + " " + .last_name"#,
         ),
         (
-            "coerce_dt_coerce_dt_eq",
+            "coerce_const_dt_coerce_const_dt_eq",
+            r#""#.as_bytes(),
+            r#"COERCE "2022-07-15T00:00:00.000000000Z" _datetime_ == COERCE "2022-07-15" _datetime_"#,
+        ),
+        (
+            "coerce_spdt_coerce_const_dt_eq",
+            r#"{"dt1":"2022-07-15T00:00:00.000000000Z"}"#.as_bytes(),
+            r#"COERCE .dt1 _datetime_ == COERCE "2022-07-15" _datetime_"#,
+        ),
+        (
+            "coerce_spdt_coerce_spdt_eq",
             r#"{"dt1":"2022-07-15T00:00:00.000000000Z","dt2":"2022-07-15"}"#.as_bytes(),
             r#"COERCE .dt1 _datetime_ == COERCE .dt2 _datetime_"#,
         ),
