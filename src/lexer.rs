@@ -234,9 +234,13 @@ fn tokenize_single_token(data: &[u8]) -> Result<(TokenKind, u16)> {
 
 #[inline]
 fn tokenize_identifier(data: &[u8]) -> Result<(TokenKind, u16)> {
+    // TODO: take until end underscore found!
     match take_while(data, |c| !c.is_ascii_whitespace() && c != b')' && c != b']') {
-        Some(end) => Ok((TokenKind::Identifier, end)),
-        None => Err(Error::InvalidIdentifier(
+        // identifier must start and end with underscore
+        Some(end) if end > 0 && data.get(end as usize - 1) == Some(&b'_') => {
+            Ok((TokenKind::Identifier, end))
+        }
+        _ => Err(Error::InvalidIdentifier(
             String::from_utf8_lossy(data).to_string(),
         )),
     }
@@ -803,7 +807,11 @@ mod tests {
             len: 1
         }
     );
-
+    lex_test!(
+        FAIL: parse_bad_identifier,
+        "_datetime",
+        Error::InvalidIdentifier("_datetime".to_string())
+    );
     lex_test!(
         parse_cast_expression,
         "COERCE .field1 _datetime_",
