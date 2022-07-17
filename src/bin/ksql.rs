@@ -1,7 +1,7 @@
 use clap::Parser as ClapParser;
 use ksql::parser::Parser;
 use std::env;
-use std::io::{stdin, stdout, BufRead};
+use std::io::{stdin, stdout, BufRead, Write};
 
 #[derive(Debug, ClapParser)]
 #[clap(version = env!("CARGO_PKG_VERSION"), author = env!("CARGO_PKG_AUTHORS"), about = env!("CARGO_PKG_DESCRIPTION"))]
@@ -33,6 +33,7 @@ fn main() -> anyhow::Result<()> {
         while stdin.read_until(b'\n', &mut data)? > 0 {
             let v = ex.calculate(&data)?;
             serde_json::to_writer(&mut stdout, &v)?;
+            let _ = stdout.write(&[b'\n'])?;
             data.clear();
         }
         Ok(())
@@ -42,6 +43,7 @@ fn main() -> anyhow::Result<()> {
             Some(data) => {
                 let v = ex.calculate(data.as_bytes())?;
                 serde_json::to_writer(&mut stdout, &v)?;
+                let _ = stdout.write(&[b'\n'])?;
                 Ok(())
             }
         }
