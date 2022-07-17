@@ -221,14 +221,14 @@ impl<'a> Parser<'a> {
             TokenKind::Coerce => {
                 // COERCE <expression> _<datatype>_
                 let next_token = self.next_operator_token(token)?;
-                let const_eligible = match next_token.kind {
+                let const_eligible = matches!(
+                    next_token.kind,
                     TokenKind::QuotedString
-                    | TokenKind::Number
-                    | TokenKind::BooleanFalse
-                    | TokenKind::BooleanTrue
-                    | TokenKind::Null => true,
-                    _ => false,
-                };
+                        | TokenKind::Number
+                        | TokenKind::BooleanFalse
+                        | TokenKind::BooleanTrue
+                        | TokenKind::Null
+                );
                 let value = self.parse_value(next_token)?;
                 if let Some(token) = self.tokenizer.next() {
                     let token = token?;
