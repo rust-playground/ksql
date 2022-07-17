@@ -50,7 +50,7 @@ fn benchmark_lexer(c: &mut Criterion) {
     group.finish();
 }
 
-fn benchmark_expressions(c: &mut Criterion) {
+fn benchmark_expressions_execution(c: &mut Criterion) {
     let mut group = c.benchmark_group("add");
     for (name, src, expression) in [
         ("num_num", "".as_bytes(), "1 + 1"),
@@ -115,32 +115,42 @@ fn benchmark_expressions(c: &mut Criterion) {
     group.finish();
 }
 
-fn benchmark_display(c: &mut Criterion) {
-    let mut m = BTreeMap::new();
-    m.insert("key".to_string(), Value::String("value".to_string()));
-    m.insert("key2".to_string(), Value::String("value2".to_string()));
-
-    let mut group = c.benchmark_group("display");
-    for (name, val) in [
-        ("null", Value::Null),
-        ("string", Value::String("string".to_string())),
-        ("datetime", Value::DateTime(Utc::now())),
-        ("number", Value::Number(64.1)),
-        ("bool", Value::Bool(true)),
-        ("object", Value::Object(m)),
+fn benchmark_expressions_parsing(c: &mut Criterion) {
+    let mut group = c.benchmark_group("add");
+    for (name, expression) in [
+        ("num_num", "1 + 1"),
+        ("sp_num", ".field1 + 1"),
+        ("sp_sp", ".field + .field2"),
+        ("fname_lname", r#".first_name + " " + .last_name"#),
         (
-            "array",
-            Value::Array(vec![
-                Value::String("string".to_string()),
-                Value::Number(64.1),
-            ]),
+            "coerce_dt_coerce_dt_eq",
+            r#"COERCE .dt1 _datetime_ == COERCE .dt2 _datetime_"#,
         ),
     ]
     .iter()
     {
+        group.throughput(Throughput::Bytes(expression.len() as u64));
         group.bench_function(*name, |b| {
             b.iter(|| {
-                let _res = format!("{}", val);
+                let _res = Parser::parse(expression).unwrap();
+            })
+        });
+    }
+    group.finish();
+
+    let mut group = c.benchmark_group("complex");
+    for (name, expression) in [
+        ("paren_div", "(1 + 1) / 2"),
+        ("paren_div_sps", "(.field1 + .field2) / .field3"),
+        ("company_employees", ".properties.employees > 20"),
+        ("not_paren_sp_not_sp", "!(.f1 != .f2)"),
+    ]
+    .iter()
+    {
+        group.throughput(Throughput::Bytes(expression.len() as u64));
+        group.bench_function(*name, |b| {
+            b.iter(|| {
+                let _res = Parser::parse(expression).unwrap();
             })
         });
     }
@@ -181,9 +191,9 @@ fn benchmark_serialize_json(c: &mut Criterion) {
 
 criterion_group!(
     benches,
-    benchmark_display,
     benchmark_serialize_json,
-    benchmark_expressions,
+    benchmark_expressions_parsing,
+    benchmark_expressions_execution,
     benchmark_lexer
 );
 criterion_main!(benches);

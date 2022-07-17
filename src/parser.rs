@@ -14,9 +14,9 @@
 //! ```
 //!
 
-use crate::lexer::{TokenKind, Tokenizer};
+use crate::lexer::{Token, TokenKind, Tokenizer};
 use anyhow::anyhow;
-use chrono::{DateTime, SecondsFormat, Utc};
+use chrono::{DateTime, Utc};
 use gjson::Kind;
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -38,53 +38,14 @@ pub enum Value {
 
 impl Display for Value {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Value::Null => f.write_str("null"),
-            Value::String(s) => {
-                f.write_str(r#"""#)?;
-                f.write_str(s)?;
-                f.write_str(r#"""#)
-            }
-            Value::DateTime(dt) => {
-                f.write_str(r#"""#)?;
-                f.write_str(&dt.to_rfc3339_opts(SecondsFormat::Nanos, true))?;
-                f.write_str(r#"""#)
-            }
-            Value::Number(n) => write!(f, "{}", n),
-            Value::Bool(b) => {
-                if *b {
-                    f.write_str("true")
-                } else {
-                    f.write_str("false")
-                }
-            }
-            Value::Object(o) => {
-                f.write_str("{")?;
+        use serde::ser::Error;
 
-                let len = o.len() - 1;
-                for (i, (k, v)) in o.iter().enumerate() {
-                    f.write_str(r#"""#)?;
-                    f.write_str(k)?;
-                    f.write_str(r#"":"#)?;
-                    write!(f, "{}", v)?;
-                    if i < len {
-                        f.write_str(",")?;
-                    }
-                }
-                f.write_str("}")
+        match serde_json::to_string(self) {
+            Ok(s) => {
+                f.write_str(&s)?;
+                Ok(())
             }
-            Value::Array(a) => {
-                f.write_str("[")?;
-
-                let len = a.len() - 1;
-                for (i, v) in a.iter().enumerate() {
-                    write!(f, "{}", v)?;
-                    if i < len {
-                        f.write_str(",")?;
-                    }
-                }
-                f.write_str("]")
-            }
+            Err(e) => Err(std::fmt::Error::custom(e)),
         }
     }
 }
@@ -162,7 +123,7 @@ impl<'a> Parser<'a> {
     pub fn parse_bytes(expression: &[u8]) -> anyhow::Result<BoxedExpression> {
         let tokenizer = Tokenizer::new_bytes(expression);
         let mut parser = Parser::new(expression, tokenizer);
-        let result = parser.parse_value(false)?;
+        let result = parser.parse_expression()?;
 
         if let Some(result) = result {
             Ok(result)
@@ -172,362 +133,275 @@ impl<'a> Parser<'a> {
     }
 
     #[allow(clippy::too_many_lines)]
-    fn parse_value(&mut self, return_value_now: bool) -> anyhow::Result<Option<BoxedExpression>> {
-        if let Some(tok) = self.tokenizer.next() {
-            let tok = tok?;
-            match tok.kind {
-                TokenKind::SelectorPath => {
-                    let start = tok.start as usize;
-                    let expression = Box::new(SelectorPath {
-                        ident: String::from_utf8_lossy(
-                            &self.exp[start + 1..(start + tok.len as usize)],
-                        )
-                        .into_owned(),
-                    });
-                    if return_value_now {
-                        Ok(Some(expression))
-                    } else {
-                        self.parse_op(false, expression)
-                    }
-                }
-                TokenKind::QuotedString => {
-                    let start = tok.start as usize;
-                    // TODO: make tokenizer peekable, peek here to see if next is a COERCE
-                    // to build a constant Value instead fo COERCEing each time
-                    let expression = Box::new(Str {
-                        s: String::from_utf8_lossy(
-                            &self.exp[start + 1..(start + tok.len as usize - 1)],
-                        )
-                        .into_owned(),
-                    });
-                    if return_value_now {
-                        Ok(Some(expression))
-                    } else {
-                        self.parse_op(false, expression)
-                    }
-                }
-                TokenKind::Number => {
-                    let start = tok.start as usize;
-                    let expression = Box::new(Num {
-                        n: String::from_utf8_lossy(&self.exp[start..start + tok.len as usize])
-                            .parse()?,
-                    });
-                    if return_value_now {
-                        Ok(Some(expression))
-                    } else {
-                        self.parse_op(false, expression)
-                    }
-                }
-                TokenKind::BooleanTrue => {
-                    // TODO: Investigate using Arc instead of Bax to share one constant like this?
-                    let expression = Box::new(Bool { b: true });
-                    if return_value_now {
-                        Ok(Some(expression))
-                    } else {
-                        self.parse_op(false, expression)
-                    }
-                }
-                TokenKind::BooleanFalse => {
-                    // TODO: Investigate using Arc instead of Bax to share one constant like this?
-                    let expression = Box::new(Bool { b: false });
-                    if return_value_now {
-                        Ok(Some(expression))
-                    } else {
-                        self.parse_op(false, expression)
-                    }
-                }
-                TokenKind::Null => {
-                    // TODO: Investigate using Arc instead of Bax to share one constant like this?
-                    let expression = Box::new(Null {});
-                    if return_value_now {
-                        Ok(Some(expression))
-                    } else {
-                        self.parse_op(false, expression)
-                    }
-                }
-                TokenKind::Not => {
-                    let v = self
-                        .parse_value(true)?
-                        .map_or_else(|| Err(anyhow!("no identifier after !")), Ok)?;
-                    self.parse_op(false, Box::new(Not { value: v }))
-                }
-                TokenKind::OpenBracket => {
-                    let mut arr = Vec::new();
+    fn parse_expression(&mut self) -> anyhow::Result<Option<BoxedExpression>> {
+        let mut current: Option<BoxedExpression> = None;
 
-                    while let Some(v) = self.parse_value(true)? {
-                        arr.push(v);
+        loop {
+            if let Some(token) = self.tokenizer.next() {
+                let token = token?;
+                if let Some(expression) = current {
+                    // CloseParen is the end of an expression block, return parsed expression.
+                    if token.kind == TokenKind::CloseParen {
+                        return Ok(Some(expression));
                     }
-                    let arr = Box::new(Arr { arr });
-
-                    if return_value_now {
-                        Ok(Some(arr))
-                    } else {
-                        self.parse_op(false, arr)
-                    }
+                    // look for next operation
+                    current = self.parse_operation(token, expression)?;
+                } else {
+                    // look for next value
+                    current = Some(self.parse_value(token)?);
                 }
-                TokenKind::Comma => match self.parse_value(return_value_now)? {
-                    Some(v) => Ok(Some(v)),
-                    None => Err(anyhow!("value required after comma: {:?}", tok)),
-                },
-                TokenKind::OpenParen => {
-                    let op = self
-                        .parse_value(false)?
-                        .map_or_else(|| Err(anyhow!("no value between ()")), Ok)?;
-
-                    if return_value_now {
-                        Ok(Some(op))
-                    } else {
-                        self.parse_op(false, op)
-                    }
-                }
-                TokenKind::Coerce => {
-                    // special case, COERCE MUST be followed by an Identifier that matches a static
-                    // pre-defined list of supported COERCE types.
-
-                    // COERCE <expression> <datatype>
-                    let value = self.parse_value(true)?;
-
-                    if let Some(value) = value {
-                        let op = match self.tokenizer.next() {
-                            Some(Ok(tok)) if tok.kind == TokenKind::Identifier => {
-                                let start = tok.start as usize;
-                                let ident = String::from_utf8_lossy(
-                                    &self.exp[start..start + tok.len as usize],
-                                );
-                                match ident.as_ref() {
-                                    "_datetime_" => Box::new(COERCEDateTime { value }),
-                                    _ => {
-                                        return Err(anyhow!(
-                                            "invalid COERCE data type '{:?}'",
-                                            &ident
-                                        ))
-                                    }
-                                }
-                            }
-                            _ => {
-                                return Err(anyhow!(
-                                    "invalid token type after COERCE '{:?}'",
-                                    String::from_utf8_lossy(&self.exp[tok.start as usize..])
-                                ))
-                            }
-                        };
-                        if return_value_now {
-                            Ok(Some(op))
-                        } else {
-                            self.parse_op(false, op)
-                        }
-                    } else {
-                        return Err(anyhow!(
-                            "no value after COERCE '{:?}'",
-                            String::from_utf8_lossy(&self.exp[tok.start as usize..])
-                        ));
-                    }
-                }
-                TokenKind::CloseParen => Err(anyhow!("no value between ()")),
-                TokenKind::CloseBracket => Ok(None),
-                _ => Err(anyhow!("invalid value: {:?}", tok)),
+            } else {
+                return Ok(current);
             }
-        } else {
-            Ok(None)
         }
     }
 
     #[allow(clippy::too_many_lines)]
-    fn parse_op(
-        &mut self,
-        return_value_now: bool,
-        value: BoxedExpression,
-    ) -> anyhow::Result<Option<BoxedExpression>> {
-        if let Some(tok) = self.tokenizer.next() {
-            let tok = tok?;
-            match tok.kind {
-                TokenKind::In => {
-                    let right = self
-                        .parse_value(false)?
-                        .map_or_else(|| Err(anyhow!("no value after IN")), Ok)?;
-                    let expression = Box::new(In { left: value, right });
-                    if return_value_now {
-                        Ok(Some(expression))
-                    } else {
-                        self.parse_op(false, expression)
-                    }
-                }
-                TokenKind::Contains => {
-                    let right = self
-                        .parse_value(false)?
-                        .map_or_else(|| Err(anyhow!("no value after CONTAINS")), Ok)?;
-                    let expression = Box::new(Contains { left: value, right });
-                    if return_value_now {
-                        Ok(Some(expression))
-                    } else {
-                        self.parse_op(false, expression)
-                    }
-                }
-                TokenKind::StartsWith => {
-                    let right = self
-                        .parse_value(false)?
-                        .map_or_else(|| Err(anyhow!("no value after STARTSWITH")), Ok)?;
-                    let expression = Box::new(StartsWith { left: value, right });
-                    if return_value_now {
-                        Ok(Some(expression))
-                    } else {
-                        self.parse_op(false, expression)
-                    }
-                }
-                TokenKind::EndsWith => {
-                    let right = self
-                        .parse_value(false)?
-                        .map_or_else(|| Err(anyhow!("no value after ENDSWITH")), Ok)?;
-                    let expression = Box::new(EndsWith { left: value, right });
-                    if return_value_now {
-                        Ok(Some(expression))
-                    } else {
-                        self.parse_op(false, expression)
-                    }
-                }
-                TokenKind::And => {
-                    let right = self
-                        .parse_value(false)?
-                        .map_or_else(|| Err(anyhow!("no value after AND")), Ok)?;
-                    let expression = Box::new(And { left: value, right });
-                    if return_value_now {
-                        Ok(Some(expression))
-                    } else {
-                        self.parse_op(false, expression)
-                    }
-                }
-                TokenKind::Or => {
-                    let right = self
-                        .parse_value(true)?
-                        .map_or_else(|| Err(anyhow!("no value after OR")), Ok)?;
-                    let expression = Box::new(Or { left: value, right });
-                    if return_value_now {
-                        Ok(Some(expression))
-                    } else {
-                        self.parse_op(false, expression)
-                    }
-                }
-                TokenKind::Gt => {
-                    let right = self
-                        .parse_value(true)?
-                        .map_or_else(|| Err(anyhow!("no value after >")), Ok)?;
-                    let expression = Box::new(Gt { left: value, right });
-                    if return_value_now {
-                        Ok(Some(expression))
-                    } else {
-                        self.parse_op(false, expression)
-                    }
-                }
-                TokenKind::Gte => {
-                    let right = self
-                        .parse_value(true)?
-                        .map_or_else(|| Err(anyhow!("no value after >=")), Ok)?;
-                    let expression = Box::new(Gte { left: value, right });
-                    if return_value_now {
-                        Ok(Some(expression))
-                    } else {
-                        self.parse_op(false, expression)
-                    }
-                }
-                TokenKind::Lt => {
-                    let right = self
-                        .parse_value(true)?
-                        .map_or_else(|| Err(anyhow!("no value after <")), Ok)?;
-                    let expression = Box::new(Lt { left: value, right });
-                    if return_value_now {
-                        Ok(Some(expression))
-                    } else {
-                        self.parse_op(false, expression)
-                    }
-                }
-                TokenKind::Lte => {
-                    let right = self
-                        .parse_value(true)?
-                        .map_or_else(|| Err(anyhow!("no value after <=")), Ok)?;
-                    let expression = Box::new(Lte { left: value, right });
-                    if return_value_now {
-                        Ok(Some(expression))
-                    } else {
-                        self.parse_op(false, expression)
-                    }
-                }
-                TokenKind::Equals => {
-                    // yes need to parse RHS of equals
-                    // once a VALUE is parsed though, without any additional nesting, the RHS
-                    // parsing must stop! and then after creating Eq call parse_op again.
-                    //
-                    // We need to pass down a bool, or something, to know when it should return a
-                    // parse value, and when it's ok to continue parsing down the nested chain.
-                    //
-                    let right = self
-                        .parse_value(true)?
-                        .map_or_else(|| Err(anyhow!("no value after ==")), Ok)?;
+    fn parse_value(&mut self, token: Token) -> anyhow::Result<BoxedExpression> {
+        match token.kind {
+            TokenKind::OpenBracket => {
+                let mut arr = Vec::new();
 
-                    let expression = Box::new(Eq { left: value, right });
-                    if return_value_now {
-                        Ok(Some(expression))
+                loop {
+                    if let Some(token) = self.tokenizer.next() {
+                        let token = token?;
+
+                        match token.kind {
+                            TokenKind::CloseBracket => {
+                                break;
+                            }
+                            TokenKind::Comma => continue, // optional for defining arrays
+                            _ => {
+                                arr.push(self.parse_value(token)?);
+                            }
+                        };
                     } else {
-                        self.parse_op(false, expression)
+                        return Err(anyhow!("unclosed Array '['"));
                     }
                 }
-                TokenKind::Add => {
-                    let right = self
-                        .parse_value(false)?
-                        .map_or_else(|| Err(anyhow!("no value after +")), Ok)?;
-                    let expression = Box::new(Add { left: value, right });
-                    self.parse_op(false, expression)
-                }
-                TokenKind::Subtract => {
-                    let right = self
-                        .parse_value(false)?
-                        .map_or_else(|| Err(anyhow!("no value after -")), Ok)?;
-                    let expression = Box::new(Sub { left: value, right });
-                    self.parse_op(false, expression)
-                }
-                TokenKind::Multiply => {
-                    let right = self
-                        .parse_value(false)?
-                        .map_or_else(|| Err(anyhow!("no value after *")), Ok)?;
-                    let expression = Box::new(Mult { left: value, right });
-                    self.parse_op(false, expression)
-                }
-                TokenKind::Divide => {
-                    let right = self
-                        .parse_value(false)?
-                        .map_or_else(|| Err(anyhow!("no value after /")), Ok)?;
-                    let expression = Box::new(Div { left: value, right });
-                    self.parse_op(false, expression)
-                }
-                TokenKind::Not => {
-                    let op = self
-                        .parse_op(false, value)
-                        .map_or_else(|_| Err(anyhow!("invalid operation after !")), Ok)?;
-                    if let Some(value) = op {
-                        let n = Not { value };
-                        Ok(Some(Box::new(n)))
-                    } else {
-                        Err(anyhow!("no operator after !"))
-                    }
-                }
-                TokenKind::OpenParen => {
-                    let op = self
-                        .parse_value(false)?
-                        .map_or_else(|| Err(anyhow!("no value between ()")), Ok)?;
-                    self.parse_op(false, op)
-                }
-                TokenKind::CloseBracket | TokenKind::CloseParen | TokenKind::Comma => {
-                    Ok(Some(value))
-                }
-                _ => {
-                    let start = tok.start as usize;
+                Ok(Box::new(Arr { arr }))
+            }
+            TokenKind::OpenParen => {
+                if let Some(expression) = self.parse_expression()? {
+                    Ok(expression)
+                } else {
                     Err(anyhow!(
-                        "invalid token after selector path '{:?}'",
-                        String::from_utf8_lossy(&self.exp[start..=start + tok.len as usize])
+                        "expression after open parenthesis '(' ends unexpectedly."
                     ))
                 }
             }
+            TokenKind::SelectorPath => {
+                let start = token.start as usize;
+                Ok(Box::new(SelectorPath {
+                    ident: String::from_utf8_lossy(
+                        &self.exp[start + 1..(start + token.len as usize)],
+                    )
+                    .into_owned(),
+                }))
+            }
+            TokenKind::QuotedString => {
+                let start = token.start as usize;
+                Ok(Box::new(Str {
+                    s: String::from_utf8_lossy(
+                        &self.exp[start + 1..(start + token.len as usize - 1)],
+                    )
+                    .into_owned(),
+                }))
+            }
+            TokenKind::Number => {
+                let start = token.start as usize;
+                Ok(Box::new(Num {
+                    n: String::from_utf8_lossy(&self.exp[start..start + token.len as usize])
+                        .parse()?,
+                }))
+            }
+            TokenKind::BooleanTrue => Ok(Box::new(Bool { b: true })),
+            TokenKind::BooleanFalse => Ok(Box::new(Bool { b: false })),
+            TokenKind::Null => Ok(Box::new(Null {})),
+            TokenKind::Coerce => {
+                // COERCE <expression> _<datatype>_
+                let next_token = self.next_operator_token(token)?;
+                let value = self.parse_value(next_token)?;
+
+                if let Some(token) = self.tokenizer.next() {
+                    let token = token?;
+                    let start = token.start as usize;
+
+                    if token.kind == TokenKind::Identifier {
+                        let ident =
+                            String::from_utf8_lossy(&self.exp[start..start + token.len as usize]);
+                        match ident.as_ref() {
+                            "_datetime_" => Ok(Box::new(COERCEDateTime { value })),
+                            _ => return Err(anyhow!("invalid COERCE data type '{:?}'", &ident)),
+                        }
+                    } else {
+                        return Err(anyhow!(
+                            "COERCE missing data type identifier, found instead: {:?}",
+                            &self.exp[start..(start + token.len as usize)]
+                        ));
+                    }
+                } else {
+                    return Err(anyhow!("no identifier after value for: COERCE"));
+                }
+            }
+            TokenKind::Not => {
+                let next_token = self.next_operator_token(token)?;
+                let value = self.parse_value(next_token)?;
+                Ok(Box::new(Not { value }))
+            }
+            _ => return Err(anyhow!("token is not a valid value: {:?}", token)),
+        }
+    }
+
+    #[allow(clippy::too_many_lines, clippy::needless_pass_by_value)]
+    fn next_operator_token(&mut self, operation_token: Token) -> anyhow::Result<Token> {
+        if let Some(token) = self.tokenizer.next() {
+            Ok(token?)
         } else {
-            Ok(Some(value))
+            let start = operation_token.start as usize;
+            Err(anyhow!(
+                "no value found after operation: {:?}",
+                &self.exp[start..(start + operation_token.len as usize)]
+            ))
+        }
+    }
+
+    #[allow(clippy::too_many_lines)]
+    fn parse_operation(
+        &mut self,
+        token: Token,
+        current: BoxedExpression,
+    ) -> anyhow::Result<Option<BoxedExpression>> {
+        match token.kind {
+            TokenKind::Add => {
+                let next_token = self.next_operator_token(token)?;
+                let right = self.parse_value(next_token)?;
+                Ok(Some(Box::new(Add {
+                    left: current,
+                    right,
+                })))
+            }
+            TokenKind::Subtract => {
+                let next_token = self.next_operator_token(token)?;
+                let right = self.parse_value(next_token)?;
+                Ok(Some(Box::new(Sub {
+                    left: current,
+                    right,
+                })))
+            }
+            TokenKind::Multiply => {
+                let next_token = self.next_operator_token(token)?;
+                let right = self.parse_value(next_token)?;
+                Ok(Some(Box::new(Mult {
+                    left: current,
+                    right,
+                })))
+            }
+            TokenKind::Divide => {
+                let next_token = self.next_operator_token(token)?;
+                let right = self.parse_value(next_token)?;
+                Ok(Some(Box::new(Div {
+                    left: current,
+                    right,
+                })))
+            }
+            TokenKind::Equals => {
+                let next_token = self.next_operator_token(token)?;
+                let right = self.parse_value(next_token)?;
+                Ok(Some(Box::new(Eq {
+                    left: current,
+                    right,
+                })))
+            }
+            TokenKind::Gt => {
+                let next_token = self.next_operator_token(token)?;
+                let right = self.parse_value(next_token)?;
+                Ok(Some(Box::new(Gt {
+                    left: current,
+                    right,
+                })))
+            }
+            TokenKind::Gte => {
+                let next_token = self.next_operator_token(token)?;
+                let right = self.parse_value(next_token)?;
+                Ok(Some(Box::new(Gte {
+                    left: current,
+                    right,
+                })))
+            }
+            TokenKind::Lt => {
+                let next_token = self.next_operator_token(token)?;
+                let right = self.parse_value(next_token)?;
+                Ok(Some(Box::new(Lt {
+                    left: current,
+                    right,
+                })))
+            }
+            TokenKind::Lte => {
+                let next_token = self.next_operator_token(token)?;
+                let right = self.parse_value(next_token)?;
+                Ok(Some(Box::new(Lte {
+                    left: current,
+                    right,
+                })))
+            }
+            TokenKind::Or => {
+                let next_token = self.next_operator_token(token)?;
+                let right = self.parse_value(next_token)?;
+                Ok(Some(Box::new(Or {
+                    left: current,
+                    right,
+                })))
+            }
+            TokenKind::And => {
+                let next_token = self.next_operator_token(token)?;
+                let right = self.parse_value(next_token)?;
+                Ok(Some(Box::new(And {
+                    left: current,
+                    right,
+                })))
+            }
+            TokenKind::StartsWith => {
+                let next_token = self.next_operator_token(token)?;
+                let right = self.parse_value(next_token)?;
+                Ok(Some(Box::new(StartsWith {
+                    left: current,
+                    right,
+                })))
+            }
+            TokenKind::EndsWith => {
+                let next_token = self.next_operator_token(token)?;
+                let right = self.parse_value(next_token)?;
+                Ok(Some(Box::new(EndsWith {
+                    left: current,
+                    right,
+                })))
+            }
+            TokenKind::In => {
+                let next_token = self.next_operator_token(token)?;
+                let right = self.parse_value(next_token)?;
+                Ok(Some(Box::new(In {
+                    left: current,
+                    right,
+                })))
+            }
+            TokenKind::Contains => {
+                let next_token = self.next_operator_token(token)?;
+                let right = self.parse_value(next_token)?;
+                Ok(Some(Box::new(Contains {
+                    left: current,
+                    right,
+                })))
+            }
+            TokenKind::Not => {
+                let next_token = self.next_operator_token(token)?;
+                let value = self
+                    .parse_operation(next_token, current)?
+                    .map_or_else(|| Err(anyhow!("invalid operation after !")), Ok)?;
+                Ok(Some(Box::new(Not { value })))
+            }
+            TokenKind::CloseBracket => Ok(Some(current)),
+            _ => return Err(anyhow!("invalid operation: {:?}", token)),
         }
     }
 }
@@ -973,7 +847,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ident_add_ident_str() -> anyhow::Result<()> {
+    fn sp_add_str_sp() -> anyhow::Result<()> {
         let src = r#"{"field1":"Dean","field2":"Karn"}"#;
         let expression = r#".field1 + " " + .field2"#;
 
@@ -984,7 +858,7 @@ mod tests {
     }
 
     #[test]
-    fn ident_add_ident_num() -> anyhow::Result<()> {
+    fn sp_add_sp_num() -> anyhow::Result<()> {
         let src = r#"{"field1":10.1,"field2":23.23}"#;
         let expression = r#".field1 + .field2"#;
 
@@ -995,7 +869,7 @@ mod tests {
     }
 
     #[test]
-    fn ident_sub_ident() -> anyhow::Result<()> {
+    fn sp_sub_sp() -> anyhow::Result<()> {
         let src = r#"{"field1":10.1,"field2":23.23}"#;
         let expression = r#".field2 - .field1"#;
 
@@ -1006,7 +880,7 @@ mod tests {
     }
 
     #[test]
-    fn ident_mult_ident() -> anyhow::Result<()> {
+    fn sp_mult_identsp() -> anyhow::Result<()> {
         let src = r#"{"field1":11.1,"field2":3}"#;
         let expression = r#".field2 * .field1"#;
 
@@ -1017,7 +891,7 @@ mod tests {
     }
 
     #[test]
-    fn ident_div_ident() -> anyhow::Result<()> {
+    fn sp_div_sp() -> anyhow::Result<()> {
         let src = r#"{"field1":3,"field2":33.3}"#;
         let expression = r#".field2 / .field1"#;
 
@@ -1039,7 +913,7 @@ mod tests {
     }
 
     #[test]
-    fn ident_add_num() -> anyhow::Result<()> {
+    fn sp_add_num() -> anyhow::Result<()> {
         let src = r#"{"field1":3,"field2":33.3}"#;
         let expression = r#"11.1 + .field1"#;
 
@@ -1050,7 +924,7 @@ mod tests {
     }
 
     #[test]
-    fn ident_eq_num_false() -> anyhow::Result<()> {
+    fn sp_eq_num_false() -> anyhow::Result<()> {
         let src = r#"{"field1":3,"field2":33.3}"#;
         let expression = r#"11.1 == .field1"#;
 
@@ -1061,7 +935,7 @@ mod tests {
     }
 
     #[test]
-    fn ident_eq_num_true() -> anyhow::Result<()> {
+    fn sp_eq_num_true() -> anyhow::Result<()> {
         let src = r#"{"field1":11.1,"field2":33.3}"#;
         let expression = r#"11.1 == .field1"#;
 
@@ -1072,7 +946,7 @@ mod tests {
     }
 
     #[test]
-    fn ident_gt_num_false() -> anyhow::Result<()> {
+    fn sp_gt_num_false() -> anyhow::Result<()> {
         let src = r#"{"field1":11.1,"field2":33.3}"#;
         let expression = r#"11.1 > .field1"#;
 
@@ -1083,7 +957,7 @@ mod tests {
     }
 
     #[test]
-    fn ident_gte_num_true() -> anyhow::Result<()> {
+    fn sp_gte_num_true() -> anyhow::Result<()> {
         let src = r#"{"field1":11.1,"field2":33.3}"#;
         let expression = r#"11.1 >= .field1"#;
 
@@ -1168,30 +1042,6 @@ mod tests {
     }
 
     #[test]
-    fn contains() -> anyhow::Result<()> {
-        let ex = Parser::parse(r#""team" CONTAINS "i""#)?;
-        let result = ex.calculate("".as_bytes())?;
-        assert_eq!(Value::Bool(false), result);
-
-        let ex = Parser::parse(r#""team" CONTAINS "ea""#)?;
-        let result = ex.calculate("".as_bytes())?;
-        assert_eq!(Value::Bool(true), result);
-
-        let ex = Parser::parse(r#"["ea"] CONTAINS "ea""#)?;
-        let result = ex.calculate("".as_bytes())?;
-        assert_eq!(Value::Bool(true), result);
-
-        let ex = Parser::parse(r#"["nope"] CONTAINS "ea""#)?;
-        let result = ex.calculate("".as_bytes())?;
-        assert_eq!(Value::Bool(false), result);
-
-        let ex = Parser::parse(r#"["a",["b","a"]] CONTAINS ["b","a"]"#)?;
-        let result = ex.calculate("".as_bytes())?;
-        assert_eq!(Value::Bool(true), result);
-        Ok(())
-    }
-
-    #[test]
     fn starts_with() -> anyhow::Result<()> {
         let ex = Parser::parse(r#""team" STARTSWITH "i""#)?;
         let result = ex.calculate("".as_bytes())?;
@@ -1210,6 +1060,30 @@ mod tests {
         assert_eq!(Value::Bool(false), result);
 
         let ex = Parser::parse(r#""team" ENDSWITH "am""#)?;
+        let result = ex.calculate("".as_bytes())?;
+        assert_eq!(Value::Bool(true), result);
+        Ok(())
+    }
+
+    #[test]
+    fn contains() -> anyhow::Result<()> {
+        let ex = Parser::parse(r#""team" CONTAINS "i""#)?;
+        let result = ex.calculate("".as_bytes())?;
+        assert_eq!(Value::Bool(false), result);
+
+        let ex = Parser::parse(r#""team" CONTAINS "ea""#)?;
+        let result = ex.calculate("".as_bytes())?;
+        assert_eq!(Value::Bool(true), result);
+
+        let ex = Parser::parse(r#"["ea"] CONTAINS "ea""#)?;
+        let result = ex.calculate("".as_bytes())?;
+        assert_eq!(Value::Bool(true), result);
+
+        let ex = Parser::parse(r#"["nope"] CONTAINS "ea""#)?;
+        let result = ex.calculate("".as_bytes())?;
+        assert_eq!(Value::Bool(false), result);
+
+        let ex = Parser::parse(r#"["a",["b","a"]] CONTAINS ["b","a"]"#)?;
         let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(true), result);
         Ok(())
@@ -1270,7 +1144,7 @@ mod tests {
         let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Number(1.0), result);
 
-        let expression = "1 + 1 / 2";
+        let expression = "1 + (1 / 2)";
         let ex = Parser::parse(expression)?;
         let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Number(1.5), result);
@@ -1383,13 +1257,13 @@ mod tests {
         let expression = "COERCE .name _datetime_";
         let ex = Parser::parse(expression)?;
         let result = ex.calculate(src)?;
-        assert_eq!(r#""2022-01-02T00:00:00.000000000Z""#, format!("{}", result));
+        assert_eq!(r#""2022-01-02T00:00:00Z""#, format!("{}", result));
 
         let src = r#"{"name":"2022-01-02"}"#.as_bytes();
         let expression = "COERCE .name _datetime_";
         let ex = Parser::parse(expression)?;
         let result = ex.calculate(src)?;
-        assert_eq!(r#""2022-01-02T00:00:00.000000000Z""#, format!("{}", result));
+        assert_eq!(r#""2022-01-02T00:00:00Z""#, format!("{}", result));
 
         let src = r#"{"dt1":"2022-01-02","dt2":"2022-01-02"}"#.as_bytes();
         let expression = "COERCE .dt1 _datetime_ == COERCE .dt2 _datetime_";
