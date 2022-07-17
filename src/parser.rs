@@ -1329,6 +1329,25 @@ mod tests {
         let ex = Parser::parse(expression)?;
         let result = ex.calculate(src)?;
         assert_eq!(Value::Bool(false), result);
+
+        let src = r#"{"dt1":"2022-07-14T17:50:08.318426000Z"}"#.as_bytes();
+        let expression =
+            r#"COERCE .dt1 _datetime_ == COERCE "2022-07-14T17:50:08.318426000Z" _datetime_"#;
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate(src)?;
+        assert_eq!(Value::Bool(true), result);
+
+        let src = r#"{"dt1":"2022-07-14T17:50:08.318426000Z"}"#.as_bytes();
+        let expression =
+            r#"COERCE .dt1 _datetime_ == COERCE "2022-07-14T17:50:08.318426001Z" _datetime_"#;
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate(src)?;
+        assert_eq!(Value::Bool(false), result);
+
+        let expression = r#"COERCE "2022-07-14T17:50:08.318426000Z" _datetime_ == COERCE "2022-07-14T17:50:08.318426000Z" _datetime_"#;
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate("".as_bytes())?;
+        assert_eq!(Value::Bool(true), result);
         Ok(())
     }
 }
