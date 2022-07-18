@@ -221,20 +221,21 @@ fn tokenize_single_token(data: &[u8]) -> Result<(TokenKind, u16)> {
         b'&' if data.get(1) == Some(&b'&') => (TokenKind::And, 2),
         b'|' if data.get(1) == Some(&b'|') => (TokenKind::Or, 2),
         b'O' => tokenize_keyword(data, "OR".as_bytes(), TokenKind::Or)?,
-        b'C' if data.get(2) == Some(&b'N') => {
-            // can be CONTAINS, CONTAINS_ANY, CONTAINS_ALL
-            if data.get(8) == Some(&b'_') {
-                if data.get(10) == Some(&b'N') {
-                    tokenize_keyword(data, "CONTAINS_ANY".as_bytes(), TokenKind::ContainsAny)?
+        b'C' => {
+            if data.get(2) == Some(&b'N') {
+                // can be one of CONTAINS, CONTAINS_ANY, CONTAINS_ALL
+                if data.get(8) == Some(&b'_') {
+                    if data.get(10) == Some(&b'N') {
+                        tokenize_keyword(data, "CONTAINS_ANY".as_bytes(), TokenKind::ContainsAny)?
+                    } else {
+                        tokenize_keyword(data, "CONTAINS_ALL".as_bytes(), TokenKind::ContainsAll)?
+                    }
                 } else {
-                    tokenize_keyword(data, "CONTAINS_ALL".as_bytes(), TokenKind::ContainsAll)?
+                    tokenize_keyword(data, "CONTAINS".as_bytes(), TokenKind::Contains)?
                 }
             } else {
-                tokenize_keyword(data, "CONTAINS".as_bytes(), TokenKind::Contains)?
+                tokenize_keyword(data, "COERCE".as_bytes(), TokenKind::Coerce)?
             }
-        }
-        b'C' if data.get(2) == Some(&b'E') => {
-            tokenize_keyword(data, "COERCE".as_bytes(), TokenKind::Coerce)?
         }
         b'I' => tokenize_keyword(data, "IN".as_bytes(), TokenKind::In)?,
         b'S' => tokenize_keyword(data, "STARTSWITH".as_bytes(), TokenKind::StartsWith)?,
