@@ -807,6 +807,7 @@ impl Expression for ContainsAny {
         match (left, right) {
             (Value::String(s1), Value::String(s2)) => {
                 let b1: Vec<char> = s1.chars().collect();
+                // betting that lists are short and so less expensive than iterating one to create a hash set
                 Ok(Value::Bool(s2.chars().any(|b| b1.contains(&b))))
             }
             (Value::Array(arr1), Value::Array(arr2)) => {
