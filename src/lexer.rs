@@ -338,7 +338,7 @@ fn tokenize_bool(data: &[u8]) -> Result<(TokenKind, u16)> {
 #[inline]
 fn tokenize_keyword(data: &[u8], keyword: &[u8], kind: TokenKind) -> Result<(TokenKind, u16)> {
     match take_while(data, |c| !c.is_ascii_whitespace()) {
-        Some(end) if &data[..end as usize] == keyword && data.len() > keyword.len() => {
+        Some(end) if data.len() > keyword.len() && &data[..end as usize] == keyword => {
             Ok((kind, end))
         }
         _ => Err(Error::InvalidKeyword(

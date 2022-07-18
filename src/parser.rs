@@ -806,8 +806,8 @@ impl Expression for ContainsAny {
         let right = self.right.calculate(json)?;
         match (left, right) {
             (Value::String(s1), Value::String(s2)) => {
-                let b1 = s1.as_bytes();
-                Ok(Value::Bool(s2.as_bytes().iter().any(|b| b1.contains(b))))
+                let b1: Vec<char> = s1.chars().collect();
+                Ok(Value::Bool(s2.chars().any(|b| b1.contains(&b))))
             }
             (Value::Array(arr1), Value::Array(arr2)) => {
                 Ok(Value::Bool(arr2.iter().any(|v| arr1.contains(v))))
@@ -837,8 +837,8 @@ impl Expression for ContainsAll {
         let right = self.right.calculate(json)?;
         match (left, right) {
             (Value::String(s1), Value::String(s2)) => {
-                let b1 = s1.as_bytes();
-                Ok(Value::Bool(s2.as_bytes().iter().all(|b| b1.contains(b))))
+                let b1: Vec<char> = s1.chars().collect();
+                Ok(Value::Bool(s2.chars().all(|b| b1.contains(&b))))
             }
             (Value::Array(arr1), Value::Array(arr2)) => {
                 Ok(Value::Bool(arr2.iter().all(|v| arr1.contains(v))))
