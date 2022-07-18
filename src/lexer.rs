@@ -1,34 +1,38 @@
 //! #### Syntax & Rules
 //!
-//! | Token          | Example                  | Syntax Rules                                                                                                                                                                              |
-//! |----------------|--------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-//! | `Equals`       | `==`                     | supports both `==` and `=`.                                                                                                                                                               |
-//! | `Add`          | `+`                      | N/A                                                                                                                                                                                       |
-//! | `Subtract`     | `-`                      | N/A                                                                                                                                                                                       |
-//! | `Multiply`     | `*`                      | N/A                                                                                                                                                                                       |
-//! | `Divide`       | `/`                      | N/A                                                                                                                                                                                       |
-//! | `Gt`           | `>`                      | N/A                                                                                                                                                                                       |
-//! | `Gte`          | `>=`                     | N/A                                                                                                                                                                                       |
-//! | `Lt`           | `<`                      | N/A                                                                                                                                                                                       |
-//! | `Lte`          | `<=`                     | N/A                                                                                                                                                                                       |
-//! | `OpenParen`    | `(`                      | N/A                                                                                                                                                                                       |
-//! | `CloseParen`   | `)`                      | N/A                                                                                                                                                                                       |
-//! | `OpenBracket`  | `[`                      | N/A                                                                                                                                                                                       |
-//! | `CloseBracket` | `]`                      | N/A                                                                                                                                                                                       |
-//! | `Comma`        | `,`                      | N/A                                                                                                                                                                                       |
-//! | `QuotedString` | `"sample text"`          | Must start and end with an unescaped `"` character                                                                                                                                        |
-//! | `Number`       | `123.45`                 | Must start and end with a valid `0-9` digit.                                                                                                                                              |
-//! | `BoolenTrue`   | `true`                   | Accepts `true` as a boolean only.                                                                                                                                                         |
-//! | `BoolenFalse`  | `false`                  | Accepts `false` as a boolean only.                                                                                                                                                        |
-//! | `Identifier`   | `.identifier`            | Starts with a `.` and ends with whitespace blank space. This crate currently uses [gjson](https://github.com/tidwall/gjson.rs) and so the full gjson syntax for identifiers is supported. |
-//! | `And`          | `&&`                     | N/A                                                                                                                                                                                       |
-//! | `Not`          | `!`                      | Must be before Boolean identifier or expression or be followed by an operation                                                                                                            |
-//! | `Or`           | <code>&vert;&vert;<code> | N/A                                                                                                                                                                                       |
-//! | `Contains`     | `CONTAINS `              | Ends with whitespace blank space.                                                                                                                                                         |
-//! | `In`           | `IN `                    | Ends with whitespace blank space.                                                                                                                                                         |
-//! | `StartsWith`   | `STARTSWITH `            | Ends with whitespace blank space.                                                                                                                                                         |
-//! | `EndsWith`     | `ENDSWITH `              | Ends with whitespace blank space.                                                                                                                                                         |
-//! | `NULL`         | `NULL`                   | N/A                                                                                                                                                                                       |
+//! | Token           | Example                  | Syntax Rules                                                                                                                                                                              |
+//! |-----------------|--------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+//! | `Equals`        | `==`                     | supports both `==` and `=`.                                                                                                                                                               |
+//! | `Add`           | `+`                      | N/A                                                                                                                                                                                       |
+//! | `Subtract`      | `-`                      | N/A                                                                                                                                                                                       |
+//! | `Multiply`      | `*`                      | N/A                                                                                                                                                                                       |
+//! | `Divide`        | `/`                      | N/A                                                                                                                                                                                       |
+//! | `Gt`            | `>`                      | N/A                                                                                                                                                                                       |
+//! | `Gte`           | `>=`                     | N/A                                                                                                                                                                                       |
+//! | `Lt`            | `<`                      | N/A                                                                                                                                                                                       |
+//! | `Lte`           | `<=`                     | N/A                                                                                                                                                                                       |
+//! | `OpenParen`     | `(`                      | N/A                                                                                                                                                                                       |
+//! | `CloseParen`    | `)`                      | N/A                                                                                                                                                                                       |
+//! | `OpenBracket`   | `[`                      | N/A                                                                                                                                                                                       |
+//! | `CloseBracket`  | `]`                      | N/A                                                                                                                                                                                       |
+//! | `Comma`         | `,`                      | N/A                                                                                                                                                                                       |
+//! | `QuotedString`  | `"sample text"`          | Must start and end with an unescaped `"` character                                                                                                                                        |
+//! | `Number`        | `123.45`                 | Must start and end with a valid `0-9` digit.                                                                                                                                              |
+//! | `BooleanTrue`   | `true`                   | Accepts `true` as a boolean only.                                                                                                                                                         |
+//! | `BooleanFalse`  | `false`                  | Accepts `false` as a boolean only.                                                                                                                                                        |
+//! | `SelectorPath`  | `.selector_path`         | Starts with a `.` and ends with whitespace blank space. This crate currently uses [gjson](https://github.com/tidwall/gjson.rs) and so the full gjson syntax for identifiers is supported. |
+//! | `And`           | `&&`                     | N/A                                                                                                                                                                                       |
+//! | `Not`           | `!`                      | Must be before Boolean identifier or expression or be followed by an operation                                                                                                            |
+//! | `Or`            | <code>&vert;&vert;<code> | N/A                                                                                                                                                                                       |
+//! | `Contains`      | `CONTAINS `              | Ends with whitespace blank space.                                                                                                                                                         |
+//! | `ContainsAny`   | `CONTAINS_ANY `          | Ends with whitespace blank space.                                                                                                                                                         |
+//! | `ContainsAll`   | `CONTAINS_ALL `          | Ends with whitespace blank space.                                                                                                                                                         |
+//! | `In`            | `IN `                    | Ends with whitespace blank space.                                                                                                                                                         |
+//! | `StartsWith`    | `STARTSWITH `            | Ends with whitespace blank space.                                                                                                                                                         |
+//! | `EndsWith`      | `ENDSWITH `              | Ends with whitespace blank space.                                                                                                                                                         |
+//! | `NULL`          | `NULL`                   | N/A                                                                                                                                                                                       |
+//! | `Coerce`        | `COERCE`                 | Coerces one data type into another using in combination with 'Identifier'. Syntax is `COERCE <expression> _identifer_`.                                                                   |
+//! | `Identifier`    | `_identifier_`           | Starts and end with an `_` used with 'COERCE' to cast data types. Currently the onyl supported `Identifier` is `_datetime_`.                                                              |
 
 use thiserror::Error;
 
@@ -62,6 +66,8 @@ pub enum TokenKind {
     And,
     Or,
     Contains,
+    ContainsAny,
+    ContainsAll,
     In,
     StartsWith,
     EndsWith,
@@ -215,10 +221,19 @@ fn tokenize_single_token(data: &[u8]) -> Result<(TokenKind, u16)> {
         b'&' if data.get(1) == Some(&b'&') => (TokenKind::And, 2),
         b'|' if data.get(1) == Some(&b'|') => (TokenKind::Or, 2),
         b'O' => tokenize_keyword(data, "OR".as_bytes(), TokenKind::Or)?,
-        b'C' if data.get(1) == Some(&b'O') && data.get(2) == Some(&b'N') => {
-            tokenize_keyword(data, "CONTAINS".as_bytes(), TokenKind::Contains)?
+        b'C' if data.get(2) == Some(&b'N') => {
+            // can be CONTAINS, CONTAINS_ANY, CONTAINS_ALL
+            if data.get(8) == Some(&b'_') {
+                if data.get(10) == Some(&b'N') {
+                    tokenize_keyword(data, "CONTAINS_ANY".as_bytes(), TokenKind::ContainsAny)?
+                } else {
+                    tokenize_keyword(data, "CONTAINS_ALL".as_bytes(), TokenKind::ContainsAll)?
+                }
+            } else {
+                tokenize_keyword(data, "CONTAINS".as_bytes(), TokenKind::Contains)?
+            }
         }
-        b'C' if data.get(1) == Some(&b'O') && data.get(2) == Some(&b'E') => {
+        b'C' if data.get(2) == Some(&b'E') => {
             tokenize_keyword(data, "COERCE".as_bytes(), TokenKind::Coerce)?
         }
         b'I' => tokenize_keyword(data, "IN".as_bytes(), TokenKind::In)?,
@@ -742,6 +757,36 @@ mod tests {
         FAIL: contains,
         " CONTAINS",
         Error::InvalidKeyword("CONTAINS".to_string())
+    );
+
+    lex_test!(
+        parse_contains_any,
+        " CONTAINS_ANY ",
+        Token {
+            kind: TokenKind::ContainsAny,
+            start: 1,
+            len: 12
+        }
+    );
+    lex_test!(
+        FAIL: contains_any,
+        " CONTAINS_ANY",
+        Error::InvalidKeyword("CONTAINS_ANY".to_string())
+    );
+
+    lex_test!(
+        parse_contains_all,
+        " CONTAINS_ALL ",
+        Token {
+            kind: TokenKind::ContainsAll,
+            start: 1,
+            len: 12
+        }
+    );
+    lex_test!(
+        FAIL: contains_all,
+        " CONTAINS_ALL",
+        Error::InvalidKeyword("CONTAINS_ALL".to_string())
     );
 
     lex_test!(

@@ -409,6 +409,22 @@ impl<'a> Parser<'a> {
                     right,
                 })))
             }
+            TokenKind::ContainsAny => {
+                let next_token = self.next_operator_token(token)?;
+                let right = self.parse_value(next_token)?;
+                Ok(Some(Box::new(ContainsAny {
+                    left: current,
+                    right,
+                })))
+            }
+            TokenKind::ContainsAll => {
+                let next_token = self.next_operator_token(token)?;
+                let right = self.parse_value(next_token)?;
+                Ok(Some(Box::new(ContainsAll {
+                    left: current,
+                    right,
+                })))
+            }
             TokenKind::Not => {
                 let next_token = self.next_operator_token(token)?;
                 let value = self
@@ -432,11 +448,11 @@ impl Expression for COERCEDateTime {
         let value = self.value.calculate(json)?;
 
         match value {
-            // TODO: Add more variants
             Value::String(ref s) => match anydate::parse_utc(s) {
                 Err(_) => Ok(Value::Null),
                 Ok(dt) => Ok(Value::DateTime(dt)),
             },
+            Value::Null => Ok(value),
             value => Err(Error::UnsupportedCOERCE(format!(
                 "{:?} COERCE datetime",
                 value
@@ -772,6 +788,68 @@ impl Expression for Contains {
             (Value::Array(arr1), v) => Ok(Value::Bool(arr1.contains(&v))),
             (l, r) => Err(Error::UnsupportedTypeComparison(format!(
                 "{:?} CONTAINS {:?}",
+                l, r
+            ))),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct ContainsAny {
+    left: BoxedExpression,
+    right: BoxedExpression,
+}
+
+impl Expression for ContainsAny {
+    fn calculate(&self, json: &[u8]) -> Result<Value> {
+        let left = self.left.calculate(json)?;
+        let right = self.right.calculate(json)?;
+        match (left, right) {
+            (Value::String(s1), Value::String(s2)) => {
+                let b1 = s1.as_bytes();
+                Ok(Value::Bool(s2.as_bytes().iter().any(|b| b1.contains(b))))
+            }
+            (Value::Array(arr1), Value::Array(arr2)) => {
+                Ok(Value::Bool(arr2.iter().any(|v| arr1.contains(v))))
+            }
+            (Value::Array(arr), Value::String(s)) => Ok(Value::Bool(
+                s.chars()
+                    .into_iter()
+                    .any(|v| arr.contains(&Value::String(v.to_string()))),
+            )),
+            (l, r) => Err(Error::UnsupportedTypeComparison(format!(
+                "{:?} CONTAINSANY {:?}",
+                l, r
+            ))),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct ContainsAll {
+    left: BoxedExpression,
+    right: BoxedExpression,
+}
+
+impl Expression for ContainsAll {
+    fn calculate(&self, json: &[u8]) -> Result<Value> {
+        let left = self.left.calculate(json)?;
+        let right = self.right.calculate(json)?;
+        match (left, right) {
+            (Value::String(s1), Value::String(s2)) => {
+                let b1 = s1.as_bytes();
+                Ok(Value::Bool(s2.as_bytes().iter().all(|b| b1.contains(b))))
+            }
+            (Value::Array(arr1), Value::Array(arr2)) => {
+                Ok(Value::Bool(arr2.iter().all(|v| arr1.contains(v))))
+            }
+            (Value::Array(arr), Value::String(s)) => Ok(Value::Bool(
+                s.chars()
+                    .into_iter()
+                    .all(|v| arr.contains(&Value::String(v.to_string()))),
+            )),
+            (l, r) => Err(Error::UnsupportedTypeComparison(format!(
+                "{:?} CONTAINSALL {:?}",
                 l, r
             ))),
         }
@@ -1117,17 +1195,82 @@ mod tests {
     }
 
     #[test]
+    fn contains_any() -> anyhow::Result<()> {
+        let ex = Parser::parse(r#""team" CONTAINS_ANY "im""#)?;
+        let result = ex.calculate("".as_bytes())?;
+        assert_eq!(Value::Bool(true), result);
+
+        let ex = Parser::parse(r#"["a","b","c"] CONTAINS_ANY "eac""#)?;
+        let result = ex.calculate("".as_bytes())?;
+        assert_eq!(Value::Bool(true), result);
+
+        let ex = Parser::parse(r#"["a","b","c"] CONTAINS_ANY "xyz""#)?;
+        let result = ex.calculate("".as_bytes())?;
+        assert_eq!(Value::Bool(false), result);
+
+        let ex = Parser::parse(r#"["a","b","c"] CONTAINS_ANY ["c","d","e"]"#)?;
+        let result = ex.calculate("".as_bytes())?;
+        assert_eq!(Value::Bool(true), result);
+
+        let ex = Parser::parse(r#"["a","b","c"] CONTAINS_ANY ["d","e","f"]"#)?;
+        let result = ex.calculate("".as_bytes())?;
+        assert_eq!(Value::Bool(false), result);
+
+        let ex = Parser::parse(r#"["a","b","c"] !CONTAINS_ANY ["d","e","f"]"#)?;
+        let result = ex.calculate("".as_bytes())?;
+        assert_eq!(Value::Bool(true), result);
+        Ok(())
+    }
+
+    #[test]
+    fn contains_all() -> anyhow::Result<()> {
+        let ex = Parser::parse(r#""team" CONTAINS_ALL "meat""#)?;
+        let result = ex.calculate("".as_bytes())?;
+        assert_eq!(Value::Bool(true), result);
+
+        let ex = Parser::parse(r#"["a","b","c"] CONTAINS_ALL "cab""#)?;
+        let result = ex.calculate("".as_bytes())?;
+        assert_eq!(Value::Bool(true), result);
+
+        let ex = Parser::parse(r#"["a","b","c"] CONTAINS_ALL "xyz""#)?;
+        let result = ex.calculate("".as_bytes())?;
+        assert_eq!(Value::Bool(false), result);
+
+        let ex = Parser::parse(r#"["a","b","c"] CONTAINS_ALL ["c","a","b"]"#)?;
+        let result = ex.calculate("".as_bytes())?;
+        assert_eq!(Value::Bool(true), result);
+
+        let ex = Parser::parse(r#"["a","b","c"] CONTAINS_ALL ["a","b"]"#)?;
+        let result = ex.calculate("".as_bytes())?;
+        assert_eq!(Value::Bool(true), result);
+
+        let ex = Parser::parse(r#"["a","b","c"] !CONTAINS_ALL ["a","b"]"#)?;
+        let result = ex.calculate("".as_bytes())?;
+        assert_eq!(Value::Bool(false), result);
+        Ok(())
+    }
+
+    #[test]
     fn inn() -> anyhow::Result<()> {
         let src = r#"{"field1":["test"]}"#.as_bytes();
         let expression = r#""test" IN .field1"#;
-
         let ex = Parser::parse(expression)?;
         let result = ex.calculate(src)?;
         assert_eq!(Value::Bool(true), result);
 
         let src = r#"{"field1":["test"]}"#.as_bytes();
-        let expression = r#""me" IN .field1"#;
+        let expression = r#""test" !IN .field1"#;
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate(src)?;
+        assert_eq!(Value::Bool(false), result);
 
+        let expression = r#""test" !IN ["b","a","c"]"#;
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate("".as_bytes())?;
+        assert_eq!(Value::Bool(true), result);
+
+        let src = r#"{"field1":["test"]}"#.as_bytes();
+        let expression = r#""me" IN .field1"#;
         let ex = Parser::parse(expression)?;
         let result = ex.calculate(src)?;
         assert_eq!(Value::Bool(false), result);
@@ -1280,12 +1423,6 @@ mod tests {
 
     #[test]
     fn coerce_datetime() -> anyhow::Result<()> {
-        let src = r#"{"name":"2022-01-02"}"#.as_bytes();
-        let expression = "COERCE .name _datetime_";
-        let ex = Parser::parse(expression)?;
-        let result = ex.calculate(src)?;
-        assert_eq!(r#""2022-01-02T00:00:00Z""#, format!("{}", result));
-
         let src = r#"{"name":"2022-01-02"}"#.as_bytes();
         let expression = "COERCE .name _datetime_";
         let ex = Parser::parse(expression)?;
