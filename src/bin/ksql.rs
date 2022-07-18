@@ -32,7 +32,8 @@ fn main() -> anyhow::Result<()> {
 
         while stdin.read_until(b'\n', &mut data)? > 0 {
             let v = ex.calculate(&data)?;
-            writeln!(stdout, "{}", v)?;
+            serde_json::to_writer(&mut stdout, &v)?;
+            let _ = stdout.write(&[b'\n'])?;
             data.clear();
         }
         Ok(())
@@ -41,7 +42,8 @@ fn main() -> anyhow::Result<()> {
             None => Err(anyhow::anyhow!("No data provided")),
             Some(data) => {
                 let v = ex.calculate(data.as_bytes())?;
-                writeln!(stdout, "{}", v)?;
+                serde_json::to_writer(&mut stdout, &v)?;
+                let _ = stdout.write(&[b'\n'])?;
                 Ok(())
             }
         }
