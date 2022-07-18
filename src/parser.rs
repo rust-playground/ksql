@@ -248,16 +248,16 @@ impl<'a> Parser<'a> {
                                     Ok(Box::new(expression))
                                 }
                             }
-                            _ => return Err(anyhow!("invalid COERCE data type '{:?}'", &ident)),
+                            _ => Err(anyhow!("invalid COERCE data type '{:?}'", &ident)),
                         }
                     } else {
-                        return Err(anyhow!(
+                        Err(anyhow!(
                             "COERCE missing data type identifier, found instead: {:?}",
                             &self.exp[start..(start + token.len as usize)]
-                        ));
+                        ))
                     }
                 } else {
-                    return Err(anyhow!("no identifier after value for: COERCE"));
+                    Err(anyhow!("no identifier after value for: COERCE"))
                 }
             }
             TokenKind::Not => {
@@ -265,7 +265,7 @@ impl<'a> Parser<'a> {
                 let value = self.parse_value(next_token)?;
                 Ok(Box::new(Not { value }))
             }
-            _ => return Err(anyhow!("token is not a valid value: {:?}", token)),
+            _ => Err(anyhow!("token is not a valid value: {:?}", token)),
         }
     }
 
@@ -433,7 +433,7 @@ impl<'a> Parser<'a> {
                 Ok(Some(Box::new(Not { value })))
             }
             TokenKind::CloseBracket => Ok(Some(current)),
-            _ => return Err(anyhow!("invalid operation: {:?}", token)),
+            _ => Err(anyhow!("invalid operation: {:?}", token)),
         }
     }
 }
