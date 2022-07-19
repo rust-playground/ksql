@@ -472,9 +472,9 @@ impl Expression for Between {
             (Value::DateTime(v), Value::DateTime(lhs), Value::DateTime(rhs)) => {
                 Ok(Value::Bool(v > lhs && v < rhs))
             }
-            (Value::Null, _, _) => Ok(Value::Bool(false)),
-            (_, Value::Null, _) => Ok(Value::Bool(false)),
-            (_, _, Value::Null) => Ok(Value::Bool(false)),
+            (Value::Null, _, _) | (_, Value::Null, _) | (_, _, Value::Null) => {
+                Ok(Value::Bool(false))
+            }
             (v, lhs, rhs) => Err(Error::UnsupportedTypeComparison(format!(
                 "{:?} BETWEEN {:?} {:?}",
                 v, lhs, rhs
