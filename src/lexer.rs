@@ -37,7 +37,7 @@
 use thiserror::Error;
 
 /// The lexed token.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Token {
     pub start: u32,
     pub len: u16,
@@ -45,7 +45,7 @@ pub struct Token {
 }
 
 /// The kind of `Token`.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum TokenKind {
     SelectorPath,
     QuotedString,
@@ -69,6 +69,7 @@ pub enum TokenKind {
     ContainsAny,
     ContainsAll,
     In,
+    Between,
     StartsWith,
     EndsWith,
     OpenBracket,
@@ -240,6 +241,7 @@ fn tokenize_single_token(data: &[u8]) -> Result<(TokenKind, u16)> {
         b'I' => tokenize_keyword(data, "IN".as_bytes(), TokenKind::In)?,
         b'S' => tokenize_keyword(data, "STARTSWITH".as_bytes(), TokenKind::StartsWith)?,
         b'E' => tokenize_keyword(data, "ENDSWITH".as_bytes(), TokenKind::EndsWith)?,
+        b'B' => tokenize_keyword(data, "BETWEEN".as_bytes(), TokenKind::Between)?,
         b'N' => tokenize_null(data)?,
         c if c.is_ascii_digit() => tokenize_number(data)?,
         b'_' => tokenize_identifier(data)?,
@@ -876,5 +878,19 @@ mod tests {
             start: 15,
             len: 10
         }
+    );
+    lex_test!(
+        parse_between,
+        " BETWEEN ",
+        Token {
+            kind: TokenKind::Between,
+            start: 1,
+            len: 7
+        }
+    );
+    lex_test!(
+        FAIL: parse_bad_between,
+        " BETWEEN",
+        Error::InvalidKeyword("BETWEEN".to_string())
     );
 }
