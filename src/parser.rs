@@ -425,6 +425,17 @@ impl<'a> Parser<'a> {
                     right,
                 })))
             }
+            TokenKind::Between => {
+                let lhs_token = self.next_operator_token(token.clone())?;
+                let left = self.parse_value(lhs_token)?;
+                let rhs_token = self.next_operator_token(token)?;
+                let right = self.parse_value(rhs_token)?;
+                Ok(Some(Box::new(Between {
+                    left,
+                    right,
+                    value: current,
+                })))
+            }
             TokenKind::Not => {
                 let next_token = self.next_operator_token(token)?;
                 let value = self
@@ -434,6 +445,40 @@ impl<'a> Parser<'a> {
             }
             TokenKind::CloseBracket => Ok(Some(current)),
             _ => Err(anyhow!("invalid operation: {:?}", token)),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct Between {
+    left: BoxedExpression,
+    right: BoxedExpression,
+    value: BoxedExpression,
+}
+
+impl Expression for Between {
+    fn calculate(&self, json: &[u8]) -> Result<Value> {
+        let left = self.left.calculate(json)?;
+        let right = self.right.calculate(json)?;
+        let value = self.value.calculate(json)?;
+
+        match (value, left, right) {
+            (Value::String(v), Value::String(lhs), Value::String(rhs)) => {
+                Ok(Value::Bool(v > lhs && v < rhs))
+            }
+            (Value::Number(v), Value::Number(lhs), Value::Number(rhs)) => {
+                Ok(Value::Bool(v > lhs && v < rhs))
+            }
+            (Value::DateTime(v), Value::DateTime(lhs), Value::DateTime(rhs)) => {
+                Ok(Value::Bool(v > lhs && v < rhs))
+            }
+            (Value::Null, _, _) | (_, Value::Null, _) | (_, _, Value::Null) => {
+                Ok(Value::Bool(false))
+            }
+            (v, lhs, rhs) => Err(Error::UnsupportedTypeComparison(format!(
+                "{:?} BETWEEN {:?} {:?}",
+                v, lhs, rhs
+            ))),
         }
     }
 }
@@ -578,6 +623,7 @@ impl Expression for Gt {
         match (left, right) {
             (Value::String(s1), Value::String(s2)) => Ok(Value::Bool(s1 > s2)),
             (Value::Number(n1), Value::Number(n2)) => Ok(Value::Bool(n1 > n2)),
+            (Value::DateTime(dt1), Value::DateTime(dt2)) => Ok(Value::Bool(dt1 > dt2)),
             (l, r) => Err(Error::UnsupportedTypeComparison(format!(
                 "{:?} > {:?}",
                 l, r
@@ -600,6 +646,7 @@ impl Expression for Gte {
         match (left, right) {
             (Value::String(s1), Value::String(s2)) => Ok(Value::Bool(s1 >= s2)),
             (Value::Number(n1), Value::Number(n2)) => Ok(Value::Bool(n1 >= n2)),
+            (Value::DateTime(dt1), Value::DateTime(dt2)) => Ok(Value::Bool(dt1 >= dt2)),
             (l, r) => Err(Error::UnsupportedTypeComparison(format!(
                 "{:?} >= {:?}",
                 l, r
@@ -622,6 +669,7 @@ impl Expression for Lt {
         match (left, right) {
             (Value::String(s1), Value::String(s2)) => Ok(Value::Bool(s1 < s2)),
             (Value::Number(n1), Value::Number(n2)) => Ok(Value::Bool(n1 < n2)),
+            (Value::DateTime(dt1), Value::DateTime(dt2)) => Ok(Value::Bool(dt1 < dt2)),
             (l, r) => Err(Error::UnsupportedTypeComparison(format!(
                 "{:?} < {:?}",
                 l, r
@@ -644,6 +692,7 @@ impl Expression for Lte {
         match (left, right) {
             (Value::String(s1), Value::String(s2)) => Ok(Value::Bool(s1 <= s2)),
             (Value::Number(n1), Value::Number(n2)) => Ok(Value::Bool(n1 <= n2)),
+            (Value::DateTime(dt1), Value::DateTime(dt2)) => Ok(Value::Bool(dt1 <= dt2)),
             (l, r) => Err(Error::UnsupportedTypeComparison(format!(
                 "{:?} <= {:?}",
                 l, r
@@ -1486,6 +1535,92 @@ mod tests {
         let ex = Parser::parse(expression)?;
         let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(true), result);
+
+        let expression = r#"COERCE "2022-07-14T17:50:08.318426001Z" _datetime_ > COERCE "2022-07-14T17:50:08.318426000Z" _datetime_"#;
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate("".as_bytes())?;
+        assert_eq!(Value::Bool(true), result);
+
+        let expression = r#"COERCE "2022-07-14T17:50:08.318426000Z" _datetime_ < COERCE "2022-07-14T17:50:08.318426001Z" _datetime_"#;
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate("".as_bytes())?;
+        assert_eq!(Value::Bool(true), result);
+
+        let expression = r#"COERCE "2022-07-14T17:50:08.318426000Z" _datetime_ >= COERCE "2022-07-14T17:50:08.318426000Z" _datetime_"#;
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate("".as_bytes())?;
+        assert_eq!(Value::Bool(true), result);
+
+        let expression = r#"COERCE "2022-07-14T17:50:08.318426000Z" _datetime_ <= COERCE "2022-07-14T17:50:08.318426000Z" _datetime_"#;
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate("".as_bytes())?;
+        assert_eq!(Value::Bool(true), result);
+
+        let expression = r#"COERCE "2022-07-14T17:50:08.318426001Z" _datetime_ >= COERCE "2022-07-14T17:50:08.318426000Z" _datetime_"#;
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate("".as_bytes())?;
+        assert_eq!(Value::Bool(true), result);
+
+        let expression = r#"COERCE "2022-07-14T17:50:08.318426000Z" _datetime_ <= COERCE "2022-07-14T17:50:08.318426001Z" _datetime_"#;
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate("".as_bytes())?;
+        assert_eq!(Value::Bool(true), result);
+
+        Ok(())
+    }
+
+    #[test]
+    fn between() -> anyhow::Result<()> {
+        let expression = "1 BETWEEN 0 10";
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate("".as_bytes())?;
+        assert_eq!(Value::Bool(true), result);
+
+        let expression = "0 BETWEEN 0 10";
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate("".as_bytes())?;
+        assert_eq!(Value::Bool(false), result);
+
+        let expression = "10 BETWEEN 0 10";
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate("".as_bytes())?;
+        assert_eq!(Value::Bool(false), result);
+
+        let expression = ".key BETWEEN 0 10";
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate("".as_bytes())?;
+        assert_eq!(Value::Bool(false), result);
+
+        let expression = "0 BETWEEN .key 10";
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate("".as_bytes())?;
+        assert_eq!(Value::Bool(false), result);
+
+        let expression = "10 BETWEEN 0 .key";
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate("".as_bytes())?;
+        assert_eq!(Value::Bool(false), result);
+
+        let expression = r#""g" BETWEEN "a" "z""#;
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate("".as_bytes())?;
+        assert_eq!(Value::Bool(true), result);
+
+        let expression = r#""z" BETWEEN "a" "z""#;
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate("".as_bytes())?;
+        assert_eq!(Value::Bool(false), result);
+
+        let expression = r#"COERCE "2022-01-02" _datetime_ BETWEEN COERCE "2022-01-01" _datetime_ COERCE "2022-01-30" _datetime_"#;
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate("".as_bytes())?;
+        assert_eq!(Value::Bool(true), result);
+
+        let expression = r#"COERCE "2022-01-01" _datetime_ BETWEEN COERCE "2022-01-01" _datetime_ COERCE "2022-01-30" _datetime_"#;
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate("".as_bytes())?;
+        assert_eq!(Value::Bool(false), result);
+
         Ok(())
     }
 }
