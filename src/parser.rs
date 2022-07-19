@@ -578,6 +578,7 @@ impl Expression for Gt {
         match (left, right) {
             (Value::String(s1), Value::String(s2)) => Ok(Value::Bool(s1 > s2)),
             (Value::Number(n1), Value::Number(n2)) => Ok(Value::Bool(n1 > n2)),
+            (Value::DateTime(dt1), Value::DateTime(dt2)) => Ok(Value::Bool(dt1 > dt2)),
             (l, r) => Err(Error::UnsupportedTypeComparison(format!(
                 "{:?} > {:?}",
                 l, r
@@ -600,6 +601,7 @@ impl Expression for Gte {
         match (left, right) {
             (Value::String(s1), Value::String(s2)) => Ok(Value::Bool(s1 >= s2)),
             (Value::Number(n1), Value::Number(n2)) => Ok(Value::Bool(n1 >= n2)),
+            (Value::DateTime(dt1), Value::DateTime(dt2)) => Ok(Value::Bool(dt1 >= dt2)),
             (l, r) => Err(Error::UnsupportedTypeComparison(format!(
                 "{:?} >= {:?}",
                 l, r
@@ -622,6 +624,7 @@ impl Expression for Lt {
         match (left, right) {
             (Value::String(s1), Value::String(s2)) => Ok(Value::Bool(s1 < s2)),
             (Value::Number(n1), Value::Number(n2)) => Ok(Value::Bool(n1 < n2)),
+            (Value::DateTime(dt1), Value::DateTime(dt2)) => Ok(Value::Bool(dt1 < dt2)),
             (l, r) => Err(Error::UnsupportedTypeComparison(format!(
                 "{:?} < {:?}",
                 l, r
@@ -644,6 +647,7 @@ impl Expression for Lte {
         match (left, right) {
             (Value::String(s1), Value::String(s2)) => Ok(Value::Bool(s1 <= s2)),
             (Value::Number(n1), Value::Number(n2)) => Ok(Value::Bool(n1 <= n2)),
+            (Value::DateTime(dt1), Value::DateTime(dt2)) => Ok(Value::Bool(dt1 <= dt2)),
             (l, r) => Err(Error::UnsupportedTypeComparison(format!(
                 "{:?} <= {:?}",
                 l, r
@@ -1486,6 +1490,37 @@ mod tests {
         let ex = Parser::parse(expression)?;
         let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(true), result);
+
+        let expression = r#"COERCE "2022-07-14T17:50:08.318426001Z" _datetime_ > COERCE "2022-07-14T17:50:08.318426000Z" _datetime_"#;
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate("".as_bytes())?;
+        assert_eq!(Value::Bool(true), result);
+
+        let expression = r#"COERCE "2022-07-14T17:50:08.318426000Z" _datetime_ < COERCE "2022-07-14T17:50:08.318426001Z" _datetime_"#;
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate("".as_bytes())?;
+        assert_eq!(Value::Bool(true), result);
+
+        let expression = r#"COERCE "2022-07-14T17:50:08.318426000Z" _datetime_ >= COERCE "2022-07-14T17:50:08.318426000Z" _datetime_"#;
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate("".as_bytes())?;
+        assert_eq!(Value::Bool(true), result);
+
+        let expression = r#"COERCE "2022-07-14T17:50:08.318426000Z" _datetime_ <= COERCE "2022-07-14T17:50:08.318426000Z" _datetime_"#;
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate("".as_bytes())?;
+        assert_eq!(Value::Bool(true), result);
+
+        let expression = r#"COERCE "2022-07-14T17:50:08.318426001Z" _datetime_ >= COERCE "2022-07-14T17:50:08.318426000Z" _datetime_"#;
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate("".as_bytes())?;
+        assert_eq!(Value::Bool(true), result);
+
+        let expression = r#"COERCE "2022-07-14T17:50:08.318426000Z" _datetime_ <= COERCE "2022-07-14T17:50:08.318426001Z" _datetime_"#;
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate("".as_bytes())?;
+        assert_eq!(Value::Bool(true), result);
+
         Ok(())
     }
 }
