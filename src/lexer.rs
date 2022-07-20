@@ -17,7 +17,7 @@
 //! | `CloseBracket`  | `]`                      | N/A                                                                                                                                                                                       |
 //! | `Comma`         | `,`                      | N/A                                                                                                                                                                                       |
 //! | `QuotedString`  | `"sample text"`          | Must start and end with an unescaped `"` character                                                                                                                                        |
-//! | `Number`        | `123.45`                 | Must start and end with a valid `0-9` digit.                                                                                                                                              |
+//! | `Number`        | ` 123.45 `               | Must start and end with a space or '+' or '-' when hard coded value in expression and supports `0-9 +- e` characters for numbers and exponent notation.                                   |
 //! | `BooleanTrue`   | `true`                   | Accepts `true` as a boolean only.                                                                                                                                                         |
 //! | `BooleanFalse`  | `false`                  | Accepts `false` as a boolean only.                                                                                                                                                        |
 //! | `SelectorPath`  | `.selector_path`         | Starts with a `.` and ends with whitespace blank space. This crate currently uses [gjson](https://github.com/tidwall/gjson.rs) and so the full gjson syntax for identifiers is supported. |
@@ -203,8 +203,20 @@ fn tokenize_single_token(data: &[u8]) -> Result<(TokenKind, u16)> {
     let (token, end) = match b {
         b'=' if data.get(1) == Some(&b'=') => (TokenKind::Equals, 2),
         b'=' => (TokenKind::Equals, 1),
-        b'+' => (TokenKind::Add, 1),
-        b'-' => (TokenKind::Subtract, 1),
+        b'+' => {
+            if data.get(1).map_or_else(|| false, u8::is_ascii_digit) {
+                tokenize_number(data)?
+            } else {
+                (TokenKind::Add, 1)
+            }
+        }
+        b'-' => {
+            if data.get(1).map_or_else(|| false, u8::is_ascii_digit) {
+                tokenize_number(data)?
+            } else {
+                (TokenKind::Subtract, 1)
+            }
+        }
         b'*' => (TokenKind::Multiply, 1),
         b'/' => (TokenKind::Divide, 1),
         b'>' if data.get(1) == Some(&b'=') => (TokenKind::Gte, 2),
@@ -244,8 +256,8 @@ fn tokenize_single_token(data: &[u8]) -> Result<(TokenKind, u16)> {
         b'E' => tokenize_keyword(data, "ENDSWITH".as_bytes(), TokenKind::EndsWith)?,
         b'B' => tokenize_keyword(data, "BETWEEN".as_bytes(), TokenKind::Between)?,
         b'N' => tokenize_null(data)?,
-        c if c.is_ascii_digit() => tokenize_number(data)?,
         b'_' => tokenize_identifier(data)?,
+        b'0'..=b'9' => tokenize_number(data)?,
         _ => return Err(Error::UnsupportedCharacter(*b)),
     };
     Ok((token, end))
@@ -375,8 +387,8 @@ fn tokenize_number(data: &[u8]) -> Result<(TokenKind, u16)> {
                 true
             }
         }
-        b'-' | b'+' => true,
-        _ => c.is_ascii_alphanumeric(),
+        b'-' | b'+' | b'e' => true,
+        _ => c.is_ascii_digit(),
     }) {
         Some(end) if !bad_number => Ok((TokenKind::Number, end)),
         _ => Err(Error::InvalidNumber(
@@ -893,5 +905,41 @@ mod tests {
         FAIL: parse_bad_between,
         " BETWEEN",
         Error::InvalidKeyword("BETWEEN".to_string())
+    );
+    lex_test!(
+        parse_negative_number,
+        " -1.23 ",
+        Token {
+            kind: TokenKind::Number,
+            start: 1,
+            len: 5
+        }
+    );
+    lex_test!(
+        parse_positive_number,
+        " +1.23 ",
+        Token {
+            kind: TokenKind::Number,
+            start: 1,
+            len: 5
+        }
+    );
+    lex_test!(
+        parse_negative_exponent_number,
+        " -1e10 ",
+        Token {
+            kind: TokenKind::Number,
+            start: 1,
+            len: 5
+        }
+    );
+    lex_test!(
+        parse_plus_exponent_number,
+        " +1e10 ",
+        Token {
+            kind: TokenKind::Number,
+            start: 1,
+            len: 5
+        }
     );
 }
