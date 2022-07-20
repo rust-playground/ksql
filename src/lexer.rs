@@ -204,14 +204,14 @@ fn tokenize_single_token(data: &[u8]) -> Result<(TokenKind, u16)> {
         b'=' if data.get(1) == Some(&b'=') => (TokenKind::Equals, 2),
         b'=' => (TokenKind::Equals, 1),
         b'+' => {
-            if data.get(1).map_or_else(|| false, |b| b.is_ascii_digit()) {
+            if data.get(1).map_or_else(|| false, u8::is_ascii_digit) {
                 tokenize_number(data)?
             } else {
                 (TokenKind::Add, 1)
             }
         }
         b'-' => {
-            if data.get(1).map_or_else(|| false, |b| b.is_ascii_digit()) {
+            if data.get(1).map_or_else(|| false, u8::is_ascii_digit) {
                 tokenize_number(data)?
             } else {
                 (TokenKind::Subtract, 1)
