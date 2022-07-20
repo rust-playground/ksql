@@ -1623,4 +1623,24 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn parse_exponent_number() -> anyhow::Result<()> {
+        let expression = "1e3 == 1000";
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate("".as_bytes())?;
+        assert_eq!(Value::Bool(true), result);
+
+        let expression = "-1e-3 == -0.001";
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate("".as_bytes())?;
+        assert_eq!(Value::Bool(true), result);
+
+        let expression = "+1e-3 == 0.001";
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate("".as_bytes())?;
+        assert_eq!(Value::Bool(true), result);
+
+        Ok(())
+    }
 }
