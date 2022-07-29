@@ -1675,6 +1675,11 @@ mod tests {
         let result = ex.calculate(src)?;
         assert_eq!(Value::Bool(true), result);
 
+        let expression = r#"false || (.NumberOfEmployees > "200" && .AnnualRevenue == "2000000")"#;
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate(src)?;
+        assert_eq!(Value::Bool(true), result);
+
         Ok(())
     }
 }
