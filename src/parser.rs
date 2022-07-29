@@ -362,16 +362,18 @@ impl<'a> Parser<'a> {
                 })))
             }
             TokenKind::Or => {
-                let next_token = self.next_operator_token(token)?;
-                let right = self.parse_value(next_token)?;
+                let right = self
+                    .parse_expression()?
+                    .map_or_else(|| Err(anyhow!("invalid operation after ||")), Ok)?;
                 Ok(Some(Box::new(Or {
                     left: current,
                     right,
                 })))
             }
             TokenKind::And => {
-                let next_token = self.next_operator_token(token)?;
-                let right = self.parse_value(next_token)?;
+                let right = self
+                    .parse_expression()?
+                    .map_or_else(|| Err(anyhow!("invalid operation after &&")), Ok)?;
                 Ok(Some(Box::new(And {
                     left: current,
                     right,
@@ -1639,6 +1641,38 @@ mod tests {
         let expression = "+1e-3 == 0.001";
         let ex = Parser::parse(expression)?;
         let result = ex.calculate("".as_bytes())?;
+        assert_eq!(Value::Bool(true), result);
+
+        Ok(())
+    }
+
+    #[test]
+    fn parse_random_expressions() -> anyhow::Result<()> {
+        let src = r#"{"AnnualRevenue":"2000000","NumberOfEmployees":"201","FirstName":"scott"}"#
+            .as_bytes();
+        let expression = r#".NumberOfEmployees > "200" && .AnnualRevenue == "2000000""#;
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate(src)?;
+        assert_eq!(Value::Bool(true), result);
+
+        let expression = r#".AnnualRevenue >= "5000000" || (.NumberOfEmployees > "200" && .AnnualRevenue == "2000000")"#;
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate(src)?;
+        assert_eq!(Value::Bool(true), result);
+
+        let expression = r#".AnnualRevenue >= "5000000" || (true && .AnnualRevenue == "2000000")"#;
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate(src)?;
+        assert_eq!(Value::Bool(true), result);
+
+        let expression = r#".AnnualRevenue >= "5000000" || (.NumberOfEmployees > "200" && true)"#;
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate(src)?;
+        assert_eq!(Value::Bool(true), result);
+
+        let expression = r#"true || (.NumberOfEmployees > "200" && .AnnualRevenue == "2000000")"#;
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate(src)?;
         assert_eq!(Value::Bool(true), result);
 
         Ok(())
