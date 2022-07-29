@@ -1284,13 +1284,13 @@ mod tests {
             .as_bytes();
         let ex =
             Parser::parse(r#".FirstName CONTAINS_ANY ["noah", "emily", "alexandra","scott"]"#)?;
-        let result = ex.calculate(&src)?;
+        let result = ex.calculate(src)?;
         assert_eq!(Value::Bool(true), result);
 
         let src = r#"{"AnnualRevenue":"2000000","NumberOfEmployees":"201","FirstName":"scott"}"#
             .as_bytes();
         let ex = Parser::parse(r#".FirstName CONTAINS_ANY ["noah", "emily", "alexandra"]"#)?;
-        let result = ex.calculate(&src)?;
+        let result = ex.calculate(src)?;
         assert_eq!(Value::Bool(false), result);
 
         Ok(())
@@ -1325,13 +1325,13 @@ mod tests {
         let src = r#"{"AnnualRevenue":"2000000","NumberOfEmployees":"201","FirstName":"scott"}"#
             .as_bytes();
         let ex = Parser::parse(r#".FirstName CONTAINS_ALL ["sc", "ot", "ott","cot"]"#)?;
-        let result = ex.calculate(&src)?;
+        let result = ex.calculate(src)?;
         assert_eq!(Value::Bool(true), result);
 
         let src = r#"{"AnnualRevenue":"2000000","NumberOfEmployees":"201","FirstName":"scott"}"#
             .as_bytes();
         let ex = Parser::parse(r#".FirstName CONTAINS_ALL ["sc", "ot", "ott","b"]"#)?;
-        let result = ex.calculate(&src)?;
+        let result = ex.calculate(src)?;
         assert_eq!(Value::Bool(false), result);
 
         Ok(())
