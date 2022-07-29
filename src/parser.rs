@@ -869,8 +869,12 @@ impl Expression for ContainsAny {
                     .into_iter()
                     .any(|v| arr.contains(&Value::String(v.to_string()))),
             )),
+            (Value::String(s), Value::Array(arr)) => Ok(Value::Bool(arr.iter().any(|v| match v {
+                Value::String(s2) => s.contains(s2),
+                _ => false,
+            }))),
             (l, r) => Err(Error::UnsupportedTypeComparison(format!(
-                "{:?} CONTAINSANY {:?}",
+                "{:?} CONTAINS_ANY {:?}",
                 l, r
             ))),
         }
@@ -900,8 +904,12 @@ impl Expression for ContainsAll {
                     .into_iter()
                     .all(|v| arr.contains(&Value::String(v.to_string()))),
             )),
+            (Value::String(s), Value::Array(arr)) => Ok(Value::Bool(arr.iter().all(|v| match v {
+                Value::String(s2) => s.contains(s2),
+                _ => false,
+            }))),
             (l, r) => Err(Error::UnsupportedTypeComparison(format!(
-                "{:?} CONTAINSALL {:?}",
+                "{:?} CONTAINS_ALL {:?}",
                 l, r
             ))),
         }
@@ -1271,6 +1279,20 @@ mod tests {
         let ex = Parser::parse(r#"["a","b","c"] !CONTAINS_ANY ["d","e","f"]"#)?;
         let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(true), result);
+
+        let src = r#"{"AnnualRevenue":"2000000","NumberOfEmployees":"201","FirstName":"scott"}"#
+            .as_bytes();
+        let ex =
+            Parser::parse(r#".FirstName CONTAINS_ANY ["noah", "emily", "alexandra","scott"]"#)?;
+        let result = ex.calculate(src)?;
+        assert_eq!(Value::Bool(true), result);
+
+        let src = r#"{"AnnualRevenue":"2000000","NumberOfEmployees":"201","FirstName":"scott"}"#
+            .as_bytes();
+        let ex = Parser::parse(r#".FirstName CONTAINS_ANY ["noah", "emily", "alexandra"]"#)?;
+        let result = ex.calculate(src)?;
+        assert_eq!(Value::Bool(false), result);
+
         Ok(())
     }
 
@@ -1299,6 +1321,19 @@ mod tests {
         let ex = Parser::parse(r#"["a","b","c"] !CONTAINS_ALL ["a","b"]"#)?;
         let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(false), result);
+
+        let src = r#"{"AnnualRevenue":"2000000","NumberOfEmployees":"201","FirstName":"scott"}"#
+            .as_bytes();
+        let ex = Parser::parse(r#".FirstName CONTAINS_ALL ["sc", "ot", "ott","cot"]"#)?;
+        let result = ex.calculate(src)?;
+        assert_eq!(Value::Bool(true), result);
+
+        let src = r#"{"AnnualRevenue":"2000000","NumberOfEmployees":"201","FirstName":"scott"}"#
+            .as_bytes();
+        let ex = Parser::parse(r#".FirstName CONTAINS_ALL ["sc", "ot", "ott","b"]"#)?;
+        let result = ex.calculate(src)?;
+        assert_eq!(Value::Bool(false), result);
+
         Ok(())
     }
 
