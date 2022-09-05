@@ -400,6 +400,7 @@ fn tokenize_number(data: &[u8]) -> Result<(TokenKind, u16)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::lexer::TokenKind::Add;
 
     macro_rules! lex_test {
         (FAIL: $name:ident, $src:expr, $e:expr ) => {
@@ -426,6 +427,35 @@ mod tests {
             }
         };
     }
+
+    // #[test]
+    // fn test_it() -> Result<()> {
+    //     let src: &str = "1 + 1 / 2";
+    //     let src: &str = "1 + (1 / 2)";
+    //     let mut tokenizer = Tokenizer::new_bytes(src.as_bytes());
+    //
+    //
+    //     [
+    //         Divide{1,2}
+    //         Add {3,4}
+    //         Number(2)
+    //         Number(1)
+    //         Number(1)
+    //     ]
+    //
+    //     [
+    //         Add {1,2}
+    //         Number(1)
+    //         Divide{3,4}
+    //         Number(1)
+    //         Number(2)
+    //     ]
+    //
+    //     let tokens = tokenizer.collect::<Vec<_>>();
+    //
+    //     dbg!(tokens);
+    //     Ok(())
+    // }
 
     // singular
     lex_test!(

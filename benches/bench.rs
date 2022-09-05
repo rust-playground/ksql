@@ -199,11 +199,27 @@ fn benchmark_serialize_json(c: &mut Criterion) {
     group.finish();
 }
 
+fn benchmark_it(c: &mut Criterion) {
+    let mut exp = "1".to_string();
+    for n in 1..13 {
+        exp += " + 1"
+    }
+    let mut group = c.benchmark_group("operations");
+    for (name, val) in [("add", Parser::parse(&exp).unwrap())].iter() {
+        group.bench_function(*name, |b| {
+            b.iter(|| {
+                let _res = val.calculate("".as_bytes());
+            })
+        });
+    }
+    group.finish();
+}
+
 criterion_group!(
     benches,
-    benchmark_serialize_json,
-    benchmark_expressions_parsing,
-    benchmark_expressions_execution,
-    benchmark_lexer
+    benchmark_it // benchmark_serialize_json,
+                 // benchmark_expressions_parsing,
+                 // benchmark_expressions_execution,
+                 // benchmark_lexer
 );
 criterion_main!(benches);
