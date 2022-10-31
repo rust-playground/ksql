@@ -70,9 +70,15 @@ Expressions support most mathematical and string expressions see below for detai
 | `EndsWith`     | `ENDSWITH `              | Ends with whitespace blank space.                                                                                                                                                         |
 | `NULL`         | `NULL`                   | N/A                                                                                                                                                                                       |
 | `Coerce`       | `COERCE`                 | Coerces one data type into another using in combination with 'Identifier'. Syntax is `COERCE <expression> _identifer_`.                                                                   |
-| `Identifier`   | `_identifier_`           | Starts and end with an `_` used with 'COERCE' to cast data types. Currently the onyl supported `Identifier` is `_datetime_`.                                                              |
+| `Identifier`   | `_identifier_`           | Starts and end with an `_` used with 'COERCE' to cast data types. Currently the only supported `Identifier` is `_datetime_`.                                                              |
 
-    
+#### COERCE Types
+
+| Type          | Description                                        |
+|---------------|----------------------------------------------------|
+| `_datetime_`  | This attempts to convert the type into a DateTime. |
+| `_lowercase_` | This converts the text into lowercase.             |
+
 #### License
 
 <sup>

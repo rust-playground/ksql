@@ -248,6 +248,7 @@ impl<'a> Parser<'a> {
                                     Ok(Box::new(expression))
                                 }
                             }
+                            "_lowercase_" => Ok(Box::new(CoercLowercase { value })),
                             _ => Err(anyhow!("invalid COERCE data type '{:?}'", &ident)),
                         }
                     } else {
@@ -715,6 +716,24 @@ impl Expression for CoercedConst {
 }
 
 #[derive(Debug)]
+struct CoercLowercase {
+    value: BoxedExpression,
+}
+
+impl Expression for CoercLowercase {
+    fn calculate(&self, json: &[u8]) -> Result<Value> {
+        let v = self.value.calculate(json)?;
+        match v {
+            Value::String(s) => Ok(Value::String(s.to_lowercase())),
+            v => Err(Error::UnsupportedCOERCE(format!(
+                "{:?} COERCE lowercase",
+                v
+            ))),
+        }
+    }
+}
+
+#[derive(Debug)]
 struct Not {
     value: BoxedExpression,
 }
@@ -724,7 +743,7 @@ impl Expression for Not {
         let v = self.value.calculate(json)?;
         match v {
             Value::Bool(b) => Ok(Value::Bool(!b)),
-            v => Err(Error::UnsupportedTypeComparison(format!("{:?} for !", v))),
+            v => Err(Error::UnsupportedTypeComparison(format!("{v:?} for !"))),
         }
     }
 }
@@ -1514,7 +1533,7 @@ mod tests {
         let expression = "COERCE .name _datetime_";
         let ex = Parser::parse(expression)?;
         let result = ex.calculate(src)?;
-        assert_eq!(r#""2022-01-02T00:00:00Z""#, format!("{}", result));
+        assert_eq!(r#""2022-01-02T00:00:00Z""#, format!("{result}"));
 
         let src = r#"{"dt1":"2022-01-02","dt2":"2022-01-02"}"#.as_bytes();
         let expression = "COERCE .dt1 _datetime_ == COERCE .dt2 _datetime_";
@@ -1601,6 +1620,23 @@ mod tests {
         let expression = r#"COERCE "2022-07-14T17:50:08.318426000Z" _datetime_ <= COERCE "2022-07-14T17:50:08.318426001Z" _datetime_"#;
         let ex = Parser::parse(expression)?;
         let result = ex.calculate("".as_bytes())?;
+        assert_eq!(Value::Bool(true), result);
+
+        Ok(())
+    }
+
+    #[test]
+    fn coerce_lowercase() -> anyhow::Result<()> {
+        let src = r#"{"name":"Joeybloggs"}"#.as_bytes();
+        let expression = "COERCE .name _lowercase_";
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate(src)?;
+        assert_eq!(r#""joeybloggs""#, format!("{result}"));
+
+        let src = r#"{"f1":"dean","f2":"DeAN"}"#.as_bytes();
+        let expression = "COERCE .f1 _lowercase_ == COERCE .f2 _lowercase_";
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate(src)?;
         assert_eq!(Value::Bool(true), result);
 
         Ok(())
