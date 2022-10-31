@@ -248,6 +248,7 @@ impl<'a> Parser<'a> {
                                     Ok(Box::new(expression))
                                 }
                             }
+                            "_lowercase_" => Ok(Box::new(CoercLowercase { value })),
                             _ => Err(anyhow!("invalid COERCE data type '{:?}'", &ident)),
                         }
                     } else {
@@ -711,6 +712,24 @@ struct CoercedConst {
 impl Expression for CoercedConst {
     fn calculate(&self, _json: &[u8]) -> Result<Value> {
         Ok(self.value.clone())
+    }
+}
+
+#[derive(Debug)]
+struct CoercLowercase {
+    value: BoxedExpression,
+}
+
+impl Expression for CoercLowercase {
+    fn calculate(&self, json: &[u8]) -> Result<Value> {
+        let v = self.value.calculate(json)?;
+        match v {
+            Value::String(s) => Ok(Value::String(s.to_lowercase())),
+            v => Err(Error::UnsupportedCOERCE(format!(
+                "{:?} COERCE lowercase",
+                v
+            ))),
+        }
     }
 }
 
@@ -1601,6 +1620,23 @@ mod tests {
         let expression = r#"COERCE "2022-07-14T17:50:08.318426000Z" _datetime_ <= COERCE "2022-07-14T17:50:08.318426001Z" _datetime_"#;
         let ex = Parser::parse(expression)?;
         let result = ex.calculate("".as_bytes())?;
+        assert_eq!(Value::Bool(true), result);
+
+        Ok(())
+    }
+
+    #[test]
+    fn coerce_lowercase() -> anyhow::Result<()> {
+        let src = r#"{"name":"Joeybloggs"}"#.as_bytes();
+        let expression = "COERCE .name _lowercase_";
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate(src)?;
+        assert_eq!(r#""joeybloggs""#, format!("{}", result));
+
+        let src = r#"{"f1":"dean","f2":"DeAN"}"#.as_bytes();
+        let expression = "COERCE .f1 _lowercase_ == COERCE .f2 _lowercase_";
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate(src)?;
         assert_eq!(Value::Bool(true), result);
 
         Ok(())

@@ -32,8 +32,16 @@
 //! | `StartsWith`    | `STARTSWITH `            | Ends with whitespace blank space.                                                                                                                                                         |
 //! | `EndsWith`      | `ENDSWITH `              | Ends with whitespace blank space.                                                                                                                                                         |
 //! | `NULL`          | `NULL`                   | N/A                                                                                                                                                                                       |
-//! | `Coerce`        | `COERCE`                 | Coerces one data type into another using in combination with 'Identifier'. Syntax is `COERCE <expression> _identifer_`.                                                                   |
-//! | `Identifier`    | `_identifier_`           | Starts and end with an `_` used with 'COERCE' to cast data types. Currently the onyl supported `Identifier` is `_datetime_`.                                                              |
+//! | `Coerce`       | `COERCE`                 | Coerces one data type into another using in combination with 'Identifier'. Syntax is `COERCE <expression> _identifer_`.                                                                   |
+//! | `Identifier`   | `_identifier_`           | Starts and end with an `_` used with 'COERCE' to cast data types. see below for options.                                                                                                  |
+//!
+//! #### COERCE Types
+//!
+//! | Type          | Description                                        |
+//! |---------------|----------------------------------------------------|
+//! | `_datetime_`  | This attempts to convert the type into a DateTime. |
+//! | `_lowercase_` | This converts the text into lowercase.             |
+//!
 
 use thiserror::Error;
 
