@@ -1533,7 +1533,7 @@ mod tests {
         let expression = "COERCE .name _datetime_";
         let ex = Parser::parse(expression)?;
         let result = ex.calculate(src)?;
-        assert_eq!(r#""2022-01-02T00:00:00Z""#, format!("{}", result));
+        assert_eq!(r#""2022-01-02T00:00:00Z""#, format!("{result}"));
 
         let src = r#"{"dt1":"2022-01-02","dt2":"2022-01-02"}"#.as_bytes();
         let expression = "COERCE .dt1 _datetime_ == COERCE .dt2 _datetime_";
@@ -1631,7 +1631,7 @@ mod tests {
         let expression = "COERCE .name _lowercase_";
         let ex = Parser::parse(expression)?;
         let result = ex.calculate(src)?;
-        assert_eq!(r#""joeybloggs""#, format!("{}", result));
+        assert_eq!(r#""joeybloggs""#, format!("{result}"));
 
         let src = r#"{"f1":"dean","f2":"DeAN"}"#.as_bytes();
         let expression = "COERCE .f1 _lowercase_ == COERCE .f2 _lowercase_";
