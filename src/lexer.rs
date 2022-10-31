@@ -37,10 +37,10 @@
 //!
 //! #### COERCE Types
 //!
-//! | Type          | Description                                        |
-//! |---------------|----------------------------------------------------|
-//! | `_datetime_`  | This attempts to convert the type into a DateTime. |
-//! | `_lowercase_` | This converts the text into lowercase.             |
+//! | Type          | Description                                          |
+//! |---------------|------------------------------------------------------|
+//! | `_datetime_`  | This attempts to convert the type into a `DateTime`. |
+//! | `_lowercase_` | This converts the text into lowercase.               |
 //!
 
 use thiserror::Error;

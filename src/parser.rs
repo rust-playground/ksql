@@ -743,7 +743,7 @@ impl Expression for Not {
         let v = self.value.calculate(json)?;
         match v {
             Value::Bool(b) => Ok(Value::Bool(!b)),
-            v => Err(Error::UnsupportedTypeComparison(format!("{:?} for !", v))),
+            v => Err(Error::UnsupportedTypeComparison(format!("{v:?} for !"))),
         }
     }
 }
