@@ -90,7 +90,7 @@ pub trait Expression: Debug {
 }
 
 /// Is an alias for a Box<dyn Expression>
-type BoxedExpression = Box<dyn Expression>;
+pub type BoxedExpression = Box<dyn Expression>;
 
 /// Parses a supplied expression and returns a `BoxedExpression`.
 pub struct Parser<'a> {

@@ -1,7 +1,7 @@
 use clap::Parser as ClapParser;
 use ksql::parser::Parser;
 use std::env;
-use std::io::{stdin, stdout, BufRead, Write};
+use std::io::{stdin, stdout, BufRead, BufReader, Write};
 
 #[derive(Debug, ClapParser)]
 #[clap(version = env!("CARGO_PKG_VERSION"), author = env!("CARGO_PKG_AUTHORS"), about = env!("CARGO_PKG_DESCRIPTION"))]
@@ -18,34 +18,27 @@ pub struct Opts {
 fn main() -> anyhow::Result<()> {
     let opts: Opts = Opts::parse();
 
-    let is_pipe = !atty::is(atty::Stream::Stdin);
+    match opts.data {
+        None => process(opts.expression, &mut stdin().lock()),
+        Some(data) => process(opts.expression, &mut BufReader::new(data.as_bytes())),
+    }
+}
 
-    let ex = Parser::parse(&opts.expression)?;
+fn process<R>(expression: String, reader: &mut R) -> anyhow::Result<()>
+where
+    R: BufRead,
+{
+    let ex = Parser::parse(&expression)?;
 
     let stdout = stdout();
     let mut stdout = stdout.lock();
+    let mut data = Vec::new();
 
-    if is_pipe {
-        let stdin = stdin();
-        let mut stdin = stdin.lock();
-        let mut data = Vec::new();
-
-        while stdin.read_until(b'\n', &mut data)? > 0 {
-            let v = ex.calculate(&data)?;
-            serde_json::to_writer(&mut stdout, &v)?;
-            let _ = stdout.write(&[b'\n'])?;
-            data.clear();
-        }
-        Ok(())
-    } else {
-        match opts.data {
-            None => Err(anyhow::anyhow!("No data provided")),
-            Some(data) => {
-                let v = ex.calculate(data.as_bytes())?;
-                serde_json::to_writer(&mut stdout, &v)?;
-                let _ = stdout.write(&[b'\n'])?;
-                Ok(())
-            }
-        }
+    while reader.read_until(b'\n', &mut data)? > 0 {
+        let v = ex.calculate(&data)?;
+        serde_json::to_writer(&mut stdout, &v)?;
+        let _ = stdout.write(&[b'\n'])?;
+        data.clear();
     }
+    Ok(())
 }
