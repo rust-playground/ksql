@@ -248,7 +248,16 @@ impl<'a> Parser<'a> {
                                     Ok(Box::new(expression))
                                 }
                             }
-                            "_lowercase_" => Ok(Box::new(CoercLowercase { value })),
+                            "_lowercase_" => {
+                                let expression = CoercLowercase { value };
+                                if const_eligible {
+                                    Ok(Box::new(CoercedConst {
+                                        value: expression.calculate(&[])?,
+                                    }))
+                                } else {
+                                    Ok(Box::new(expression))
+                                }
+                            }
                             _ => Err(anyhow!("invalid COERCE data type '{:?}'", &ident)),
                         }
                     } else {
