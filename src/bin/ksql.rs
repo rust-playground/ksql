@@ -19,16 +19,16 @@ fn main() -> anyhow::Result<()> {
     let opts: Opts = Opts::parse();
 
     match opts.data {
-        None => process(opts.expression, &mut stdin().lock()),
-        Some(data) => process(opts.expression, &mut BufReader::new(data.as_bytes())),
+        None => process(&opts.expression, &mut stdin().lock()),
+        Some(data) => process(&opts.expression, &mut BufReader::new(data.as_bytes())),
     }
 }
 
-fn process<R>(expression: String, reader: &mut R) -> anyhow::Result<()>
+fn process<R>(expression: &str, reader: &mut R) -> anyhow::Result<()>
 where
     R: BufRead,
 {
-    let ex = Parser::parse(&expression)?;
+    let ex = Parser::parse(expression)?;
 
     let stdout = stdout();
     let mut stdout = stdout.lock();
