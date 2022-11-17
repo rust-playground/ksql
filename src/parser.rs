@@ -75,7 +75,7 @@ impl<'a> From<gjson::Value<'a>> for Value {
 }
 
 /// Represents a stateless parsed expression that can be applied to JSON data.
-pub trait Expression: Debug {
+pub trait Expression: Debug + Send + Sync {
     /// Will execute the parsed expression and apply it against the supplied json data.
     ///
     /// # Warnings
