@@ -201,9 +201,9 @@ fn benchmark_serialize_json(c: &mut Criterion) {
 
 criterion_group!(
     benches,
-    benchmark_serialize_json,
-    benchmark_expressions_parsing,
     benchmark_expressions_execution,
+    benchmark_expressions_parsing,
+    benchmark_serialize_json,
     benchmark_lexer
 );
 criterion_main!(benches);

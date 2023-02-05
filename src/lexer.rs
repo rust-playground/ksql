@@ -33,14 +33,16 @@
 //! | `EndsWith`      | `ENDSWITH `              | Ends with whitespace blank space.                                                                                                                                                         |
 //! | `NULL`          | `NULL`                   | N/A                                                                                                                                                                                       |
 //! | `Coerce`       | `COERCE`                 | Coerces one data type into another using in combination with 'Identifier'. Syntax is `COERCE <expression> _identifer_`.                                                                   |
-//! | `Identifier`   | `_identifier_`           | Starts and end with an `_` used with 'COERCE' to cast data types. see below for options.                                                                                                  |
+//! | `Identifier`   | `_identifier_`           | Starts and end with an `_` used with 'COERCE' to cast data types, see table below with supported values. You can combine multiple coercions if separated by a COMMA.                      |
 //!
 //! #### COERCE Types
 //!
 //! | Type          | Description                                          |
 //! |---------------|------------------------------------------------------|
-//! | `_datetime_`  | This attempts to convert the type into a `DateTime`. |
-//! | `_lowercase_` | This converts the text into lowercase.               |
+//! | `_datetime_`  | This attempts to convert the type into a DateTime.                                                     |
+//! | `_lowercase_` | This converts the text into lowercase.                                                                 |
+//! | `_uppercase_` | This converts the text into uppercase.                                                                 |
+//! | `_title_`     | This converts the text into title case, when the first letter is capitalized but the rest lower cased. |
 //!
 
 use thiserror::Error;
@@ -273,7 +275,9 @@ fn tokenize_single_token(data: &[u8]) -> Result<(TokenKind, u16)> {
 #[inline]
 fn tokenize_identifier(data: &[u8]) -> Result<(TokenKind, u16)> {
     // TODO: take until end underscore found!
-    match take_while(data, |c| !c.is_ascii_whitespace() && c != b')' && c != b']') {
+    match take_while(data, |c| {
+        !c.is_ascii_whitespace() && c != b')' && c != b']' && c != b','
+    }) {
         // identifier must start and end with underscore
         Some(end) if end > 0 && data.get(end as usize - 1) == Some(&b'_') => {
             Ok((TokenKind::Identifier, end))
@@ -881,7 +885,7 @@ mod tests {
         Error::InvalidIdentifier("_datetime".to_string())
     );
     lex_test!(
-        parse_cast_expression,
+        parse_coerce_expression,
         "COERCE .field1 _datetime_",
         Token {
             kind: TokenKind::Coerce,
@@ -897,6 +901,35 @@ mod tests {
             kind: TokenKind::Identifier,
             start: 15,
             len: 10
+        }
+    );
+    lex_test!(
+        parse_coerce_expression_multiple,
+        "COERCE .field1 _uppercase_,_title_",
+        Token {
+            kind: TokenKind::Coerce,
+            start: 0,
+            len: 6
+        },
+        Token {
+            kind: TokenKind::SelectorPath,
+            start: 7,
+            len: 7
+        },
+        Token {
+            kind: TokenKind::Identifier,
+            start: 15,
+            len: 11
+        },
+        Token {
+            kind: TokenKind::Comma,
+            start: 26,
+            len: 1
+        },
+        Token {
+            kind: TokenKind::Identifier,
+            start: 27,
+            len: 7
         }
     );
     lex_test!(
