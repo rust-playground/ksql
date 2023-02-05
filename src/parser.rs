@@ -479,8 +479,7 @@ impl Expression for Between {
                 Ok(Value::Bool(false))
             }
             (v, lhs, rhs) => Err(Error::UnsupportedTypeComparison(format!(
-                "{:?} BETWEEN {:?} {:?}",
-                v, lhs, rhs
+                "{v} BETWEEN {lhs} {rhs}",
             ))),
         }
     }
@@ -501,10 +500,9 @@ impl Expression for COERCEDateTime {
                 Ok(dt) => Ok(Value::DateTime(dt)),
             },
             Value::Null => Ok(value),
-            value => Err(Error::UnsupportedCOERCE(format!(
-                "{:?} COERCE datetime",
-                value
-            ))),
+            value => Err(Error::UnsupportedCOERCE(
+                format!("{value} COERCE datetime",),
+            )),
         }
     }
 }
@@ -527,10 +525,7 @@ impl Expression for Add {
             (Value::Number(n1), Value::Number(n2)) => Ok(Value::Number(n1 + n2)),
             (Value::Number(n1), Value::Null) => Ok(Value::Number(n1)),
             (Value::Null, Value::Number(n2)) => Ok(Value::Number(n2)),
-            (l, r) => Err(Error::UnsupportedTypeComparison(format!(
-                "{:?} + {:?}",
-                l, r
-            ))),
+            (l, r) => Err(Error::UnsupportedTypeComparison(format!("{l} + {r}",))),
         }
     }
 }
@@ -548,10 +543,7 @@ impl Expression for Sub {
 
         match (left, right) {
             (Value::Number(n1), Value::Number(n2)) => Ok(Value::Number(n1 - n2)),
-            (l, r) => Err(Error::UnsupportedTypeComparison(format!(
-                "{:?} - {:?}",
-                l, r
-            ))),
+            (l, r) => Err(Error::UnsupportedTypeComparison(format!("{l} - {r}",))),
         }
     }
 }
@@ -569,10 +561,7 @@ impl Expression for Mult {
 
         match (left, right) {
             (Value::Number(n1), Value::Number(n2)) => Ok(Value::Number(n1 * n2)),
-            (l, r) => Err(Error::UnsupportedTypeComparison(format!(
-                "{:?} * {:?}",
-                l, r
-            ))),
+            (l, r) => Err(Error::UnsupportedTypeComparison(format!("{l} * {r}",))),
         }
     }
 }
@@ -590,10 +579,7 @@ impl Expression for Div {
 
         match (left, right) {
             (Value::Number(n1), Value::Number(n2)) => Ok(Value::Number(n1 / n2)),
-            (l, r) => Err(Error::UnsupportedTypeComparison(format!(
-                "{:?} / {:?}",
-                l, r
-            ))),
+            (l, r) => Err(Error::UnsupportedTypeComparison(format!("{l} / {r}",))),
         }
     }
 }
@@ -627,10 +613,7 @@ impl Expression for Gt {
             (Value::String(s1), Value::String(s2)) => Ok(Value::Bool(s1 > s2)),
             (Value::Number(n1), Value::Number(n2)) => Ok(Value::Bool(n1 > n2)),
             (Value::DateTime(dt1), Value::DateTime(dt2)) => Ok(Value::Bool(dt1 > dt2)),
-            (l, r) => Err(Error::UnsupportedTypeComparison(format!(
-                "{:?} > {:?}",
-                l, r
-            ))),
+            (l, r) => Err(Error::UnsupportedTypeComparison(format!("{l} > {r}",))),
         }
     }
 }
@@ -650,10 +633,7 @@ impl Expression for Gte {
             (Value::String(s1), Value::String(s2)) => Ok(Value::Bool(s1 >= s2)),
             (Value::Number(n1), Value::Number(n2)) => Ok(Value::Bool(n1 >= n2)),
             (Value::DateTime(dt1), Value::DateTime(dt2)) => Ok(Value::Bool(dt1 >= dt2)),
-            (l, r) => Err(Error::UnsupportedTypeComparison(format!(
-                "{:?} >= {:?}",
-                l, r
-            ))),
+            (l, r) => Err(Error::UnsupportedTypeComparison(format!("{l} >= {r}",))),
         }
     }
 }
@@ -673,10 +653,7 @@ impl Expression for Lt {
             (Value::String(s1), Value::String(s2)) => Ok(Value::Bool(s1 < s2)),
             (Value::Number(n1), Value::Number(n2)) => Ok(Value::Bool(n1 < n2)),
             (Value::DateTime(dt1), Value::DateTime(dt2)) => Ok(Value::Bool(dt1 < dt2)),
-            (l, r) => Err(Error::UnsupportedTypeComparison(format!(
-                "{:?} < {:?}",
-                l, r
-            ))),
+            (l, r) => Err(Error::UnsupportedTypeComparison(format!("{l} < {r}",))),
         }
     }
 }
@@ -696,10 +673,7 @@ impl Expression for Lte {
             (Value::String(s1), Value::String(s2)) => Ok(Value::Bool(s1 <= s2)),
             (Value::Number(n1), Value::Number(n2)) => Ok(Value::Bool(n1 <= n2)),
             (Value::DateTime(dt1), Value::DateTime(dt2)) => Ok(Value::Bool(dt1 <= dt2)),
-            (l, r) => Err(Error::UnsupportedTypeComparison(format!(
-                "{:?} <= {:?}",
-                l, r
-            ))),
+            (l, r) => Err(Error::UnsupportedTypeComparison(format!("{l} <= {r}",))),
         }
     }
 }
@@ -725,10 +699,7 @@ impl Expression for CoercLowercase {
         let v = self.value.calculate(json)?;
         match v {
             Value::String(s) => Ok(Value::String(s.to_lowercase())),
-            v => Err(Error::UnsupportedCOERCE(format!(
-                "{:?} COERCE lowercase",
-                v
-            ))),
+            v => Err(Error::UnsupportedCOERCE(format!("{v} COERCE lowercase",))),
         }
     }
 }
@@ -814,10 +785,7 @@ impl Expression for Or {
 
         match (left, right) {
             (Value::Bool(b1), Value::Bool(b2)) => Ok(Value::Bool(b1 || b2)),
-            (l, r) => Err(Error::UnsupportedTypeComparison(format!(
-                "{:?} || {:?}",
-                l, r
-            ))),
+            (l, r) => Err(Error::UnsupportedTypeComparison(format!("{l} || {r}",))),
         }
     }
 }
@@ -835,10 +803,7 @@ impl Expression for And {
 
         match (left, right) {
             (Value::Bool(b1), Value::Bool(b2)) => Ok(Value::Bool(b1 && b2)),
-            (l, r) => Err(Error::UnsupportedTypeComparison(format!(
-                "{:?} && {:?}",
-                l, r
-            ))),
+            (l, r) => Err(Error::UnsupportedTypeComparison(format!("{l} && {r}",))),
         }
     }
 }
@@ -857,8 +822,7 @@ impl Expression for Contains {
             (Value::String(s1), Value::String(s2)) => Ok(Value::Bool(s1.contains(&s2))),
             (Value::Array(arr1), v) => Ok(Value::Bool(arr1.contains(&v))),
             (l, r) => Err(Error::UnsupportedTypeComparison(format!(
-                "{:?} CONTAINS {:?}",
-                l, r
+                "{l} CONTAINS {r}",
             ))),
         }
     }
@@ -893,8 +857,7 @@ impl Expression for ContainsAny {
                 _ => false,
             }))),
             (l, r) => Err(Error::UnsupportedTypeComparison(format!(
-                "{:?} CONTAINS_ANY {:?}",
-                l, r
+                "{l} CONTAINS_ANY {r}",
             ))),
         }
     }
@@ -928,8 +891,7 @@ impl Expression for ContainsAll {
                 _ => false,
             }))),
             (l, r) => Err(Error::UnsupportedTypeComparison(format!(
-                "{:?} CONTAINS_ALL {:?}",
-                l, r
+                "{l} CONTAINS_ALL {r}",
             ))),
         }
     }
@@ -948,10 +910,7 @@ impl Expression for StartsWith {
 
         match (left, right) {
             (Value::String(s1), Value::String(s2)) => Ok(Value::Bool(s1.starts_with(&s2))),
-            (l, r) => Err(Error::UnsupportedTypeComparison(format!(
-                "{:?} + {:?}",
-                l, r
-            ))),
+            (l, r) => Err(Error::UnsupportedTypeComparison(format!("{l} + {r}",))),
         }
     }
 }
@@ -969,10 +928,7 @@ impl Expression for EndsWith {
 
         match (left, right) {
             (Value::String(s1), Value::String(s2)) => Ok(Value::Bool(s1.ends_with(&s2))),
-            (l, r) => Err(Error::UnsupportedTypeComparison(format!(
-                "{:?} + {:?}",
-                l, r
-            ))),
+            (l, r) => Err(Error::UnsupportedTypeComparison(format!("{l} + {r}",))),
         }
     }
 }
@@ -990,10 +946,7 @@ impl Expression for In {
 
         match (left, right) {
             (v, Value::Array(a)) => Ok(Value::Bool(a.contains(&v))),
-            (l, r) => Err(Error::UnsupportedTypeComparison(format!(
-                "{:?} + {:?}",
-                l, r
-            ))),
+            (l, r) => Err(Error::UnsupportedTypeComparison(format!("{l} + {r}",))),
         }
     }
 }

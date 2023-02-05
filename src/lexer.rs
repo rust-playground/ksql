@@ -203,9 +203,8 @@ pub enum Error {
 
 /// Try to lex a single token from the input stream.
 fn tokenize_single_token(data: &[u8]) -> Result<(TokenKind, u16)> {
-    let b = match data.first() {
-        Some(b) => b,
-        None => panic!("invalid data passed"),
+    let Some(b) = data.first() else {
+        panic!("invalid data passed")
     };
 
     let (token, end) = match b {
