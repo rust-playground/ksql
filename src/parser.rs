@@ -21,6 +21,7 @@ use gjson::Kind;
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Display, Formatter};
+use std::iter::Peekable;
 use thiserror::Error;
 
 /// Represents the calculated Expression result.
@@ -95,11 +96,11 @@ type BoxedExpression = Box<dyn Expression>;
 /// Parses a supplied expression and returns a `BoxedExpression`.
 pub struct Parser<'a> {
     exp: &'a [u8],
-    tokenizer: Tokenizer<'a>,
+    tokenizer: Peekable<Tokenizer<'a>>,
 }
 
 impl<'a> Parser<'a> {
-    fn new(exp: &'a [u8], tokenizer: Tokenizer<'a>) -> Self {
+    fn new(exp: &'a [u8], tokenizer: Peekable<Tokenizer<'a>>) -> Self {
         Parser { exp, tokenizer }
     }
 
@@ -121,7 +122,7 @@ impl<'a> Parser<'a> {
     ///
     /// Will return `Err` the expression is invalid.
     pub fn parse_bytes(expression: &[u8]) -> anyhow::Result<BoxedExpression> {
-        let tokenizer = Tokenizer::new_bytes(expression);
+        let tokenizer = Tokenizer::new_bytes(expression).peekable();
         let mut parser = Parser::new(expression, tokenizer);
         let result = parser.parse_expression()?;
 
@@ -229,37 +230,58 @@ impl<'a> Parser<'a> {
                         | TokenKind::BooleanTrue
                         | TokenKind::Null
                 );
-                let value = self.parse_value(next_token)?;
-                if let Some(token) = self.tokenizer.next() {
-                    let token = token?;
-                    let start = token.start as usize;
+                let mut expression = self.parse_value(next_token)?;
+                loop {
+                    if let Some(token) = self.tokenizer.next() {
+                        let token = token?;
+                        let start = token.start as usize;
 
-                    if token.kind == TokenKind::Identifier {
-                        let ident =
-                            String::from_utf8_lossy(&self.exp[start..start + token.len as usize]);
-                        match ident.as_ref() {
-                            "_datetime_" => {
-                                let expression = COERCEDateTime { value };
-                                if const_eligible {
-                                    Ok(Box::new(CoercedConst {
-                                        value: expression.calculate(&[])?,
-                                    }))
-                                } else {
-                                    Ok(Box::new(expression))
+                        if token.kind == TokenKind::Identifier {
+                            let ident = String::from_utf8_lossy(
+                                &self.exp[start..start + token.len as usize],
+                            );
+                            match ident.as_ref() {
+                                "_datetime_" => {
+                                    let value = COERCEDateTime { value: expression };
+                                    if const_eligible {
+                                        expression = Box::new(CoercedConst {
+                                            value: value.calculate(&[])?,
+                                        });
+                                    } else {
+                                        expression = Box::new(value);
+                                    }
                                 }
-                            }
-                            "_lowercase_" => Ok(Box::new(CoercLowercase { value })),
-                            _ => Err(anyhow!("invalid COERCE data type '{:?}'", &ident)),
+                                "_lowercase_" => {
+                                    expression = Box::new(CoerceLowercase { value: expression });
+                                }
+                                "_uppercase_" => {
+                                    expression = Box::new(CoerceUppercase { value: expression });
+                                }
+                                "_title_" => {
+                                    expression = Box::new(CoerceTitle { value: expression });
+                                }
+                                _ => {
+                                    return Err(anyhow!("invalid COERCE data type '{:?}'", &ident))
+                                }
+                            };
+                        } else {
+                            return Err(anyhow!(
+                                "COERCE missing data type identifier, found instead: {:?}",
+                                &self.exp[start..(start + token.len as usize)]
+                            ));
                         }
                     } else {
-                        Err(anyhow!(
-                            "COERCE missing data type identifier, found instead: {:?}",
-                            &self.exp[start..(start + token.len as usize)]
-                        ))
+                        return Err(anyhow!("no identifier after value for: COERCE"));
                     }
-                } else {
-                    Err(anyhow!("no identifier after value for: COERCE"))
+                    if let Some(Ok(token)) = self.tokenizer.peek() {
+                        if token.kind == TokenKind::Comma {
+                            let _ = self.tokenizer.next(); // consume peeked comma
+                            continue;
+                        }
+                    }
+                    break;
                 }
+                Ok(expression)
             }
             TokenKind::Not => {
                 let next_token = self.next_operator_token(token)?;
@@ -690,16 +712,54 @@ impl Expression for CoercedConst {
 }
 
 #[derive(Debug)]
-struct CoercLowercase {
+struct CoerceLowercase {
     value: BoxedExpression,
 }
 
-impl Expression for CoercLowercase {
+impl Expression for CoerceLowercase {
     fn calculate(&self, json: &[u8]) -> Result<Value> {
         let v = self.value.calculate(json)?;
         match v {
             Value::String(s) => Ok(Value::String(s.to_lowercase())),
             v => Err(Error::UnsupportedCOERCE(format!("{v} COERCE lowercase",))),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct CoerceUppercase {
+    value: BoxedExpression,
+}
+
+impl Expression for CoerceUppercase {
+    fn calculate(&self, json: &[u8]) -> Result<Value> {
+        let v = self.value.calculate(json)?;
+        match v {
+            Value::String(s) => Ok(Value::String(s.to_uppercase())),
+            v => Err(Error::UnsupportedCOERCE(format!("{v} COERCE uppercase",))),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct CoerceTitle {
+    value: BoxedExpression,
+}
+
+impl Expression for CoerceTitle {
+    fn calculate(&self, json: &[u8]) -> Result<Value> {
+        let v = self.value.calculate(json)?;
+        match v {
+            Value::String(s) => {
+                let mut c = s.chars();
+                match c.next() {
+                    None => Ok(Value::String(s)),
+                    Some(f) => Ok(Value::String(
+                        f.to_uppercase().collect::<String>() + c.as_str().to_lowercase().as_str(),
+                    )),
+                }
+            }
+            v => Err(Error::UnsupportedCOERCE(format!("{v} COERCE title",))),
         }
     }
 }
@@ -1591,6 +1651,51 @@ mod tests {
         let ex = Parser::parse(expression)?;
         let result = ex.calculate(src)?;
         assert_eq!(Value::Bool(true), result);
+
+        Ok(())
+    }
+
+    #[test]
+    fn coerce_uppercase() -> anyhow::Result<()> {
+        let src = r#"{"name":"Joeybloggs"}"#.as_bytes();
+        let expression = "COERCE .name _uppercase_";
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate(src)?;
+        assert_eq!(r#""JOEYBLOGGS""#, format!("{result}"));
+
+        let src = r#"{"f1":"dean","f2":"DeAN"}"#.as_bytes();
+        let expression = "COERCE .f1 _uppercase_ == COERCE .f2 _uppercase_";
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate(src)?;
+        assert_eq!(Value::Bool(true), result);
+
+        Ok(())
+    }
+
+    #[test]
+    fn coerce_title() -> anyhow::Result<()> {
+        let src = r#"{"name":"mr."}"#.as_bytes();
+        let expression = "COERCE .name _title_";
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate(src)?;
+        assert_eq!(r#""Mr.""#, format!("{result}"));
+
+        let src = r#"{"f1":"mr.","f2":"Mr."}"#.as_bytes();
+        let expression = "COERCE .f1 _title_ == COERCE .f2 _title_";
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate(src)?;
+        assert_eq!(Value::Bool(true), result);
+
+        Ok(())
+    }
+
+    #[test]
+    fn coerce_multiple() -> anyhow::Result<()> {
+        let src = r#"{"name":"mr."}"#.as_bytes();
+        let expression = "COERCE .name _uppercase_,_title_";
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate(src)?;
+        assert_eq!(r#""Mr.""#, format!("{result}"));
 
         Ok(())
     }
