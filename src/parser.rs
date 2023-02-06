@@ -909,7 +909,6 @@ impl Expression for ContainsAny {
             }
             (Value::Array(arr), Value::String(s)) => Ok(Value::Bool(
                 s.chars()
-                    .into_iter()
                     .any(|v| arr.contains(&Value::String(v.to_string()))),
             )),
             (Value::String(s), Value::Array(arr)) => Ok(Value::Bool(arr.iter().any(|v| match v {
@@ -943,7 +942,6 @@ impl Expression for ContainsAll {
             }
             (Value::Array(arr), Value::String(s)) => Ok(Value::Bool(
                 s.chars()
-                    .into_iter()
                     .all(|v| arr.contains(&Value::String(v.to_string()))),
             )),
             (Value::String(s), Value::Array(arr)) => Ok(Value::Bool(arr.iter().all(|v| match v {

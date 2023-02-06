@@ -39,7 +39,7 @@
 //!
 //! | Type          | Description                                          |
 //! |---------------|------------------------------------------------------|
-//! | `_datetime_`  | This attempts to convert the type into a DateTime.                                                     |
+//! | `_datetime_`  | This attempts to convert the type into a `DateTime`.                                                     |
 //! | `_lowercase_` | This converts the text into lowercase.                                                                 |
 //! | `_uppercase_` | This converts the text into uppercase.                                                                 |
 //! | `_title_`     | This converts the text into title case, when the first letter is capitalized but the rest lower cased. |
