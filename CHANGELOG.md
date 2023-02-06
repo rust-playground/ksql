@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2023-01-05
+### Added
+- Added new `_uppercase_` & `_title_` COERCE identifiers.
+- Added ability to use multiple COERCE identifiers at once separated by a comma.
+- Added CLI ability to return original data if using an expression that returns a boolean.
+
+### Changed
+- Added Send + Sync restrictions to Expression trait for multithreaded use and async/await. 
+
 ## [0.8.0] - 2022-10-30
 ### Added
 - Added new `_lowercase_` COERCE identifier.
@@ -86,7 +95,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Initial release.
 
-[Unreleased]: https://github.com/rust-playground/ksql/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/rust-playground/ksql/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/rust-playground/ksql/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/rust-playground/ksql/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/rust-playground/ksql/compare/v0.6.2...v0.7.0
 [0.6.2]: https://github.com/rust-playground/ksql/compare/v0.6.1...v0.6.2
