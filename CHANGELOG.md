@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added ability to use multiple COERCE identifiers at once separated by a comma.
 - Added CLI ability to return original data if using an expression that returns a boolean.
 
+### Changed
+- Added Send + Sync restrictions to Expression trait for multithreaded use and async/await. 
+
 ## [0.8.0] - 2022-10-30
 ### Added
 - Added new `_lowercase_` COERCE identifier.
