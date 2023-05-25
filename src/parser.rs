@@ -841,6 +841,13 @@ struct Or {
 impl Expression for Or {
     fn calculate(&self, json: &[u8]) -> Result<Value> {
         let left = self.left.calculate(json)?;
+
+        if let Value::Bool(is_true) = left {
+            if is_true {
+                return Ok(left);
+            }
+        }
+
         let right = self.right.calculate(json)?;
 
         match (left, right) {
@@ -859,6 +866,13 @@ struct And {
 impl Expression for And {
     fn calculate(&self, json: &[u8]) -> Result<Value> {
         let left = self.left.calculate(json)?;
+
+        if let Value::Bool(is_true) = left {
+            if !is_true {
+                return Ok(left);
+            }
+        }
+
         let right = self.right.calculate(json)?;
 
         match (left, right) {
@@ -1806,6 +1820,11 @@ mod tests {
         let ex = Parser::parse(expression)?;
         let result = ex.calculate(src)?;
         assert_eq!(Value::Bool(true), result);
+
+        let expression = r#".MyValue != NULL && .MyValue > 19"#;
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate(src)?;
+        assert_eq!(Value::Bool(false), result);
 
         Ok(())
     }
