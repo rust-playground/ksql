@@ -519,6 +519,7 @@ struct COERCENumber {
 }
 
 impl Expression for COERCENumber {
+    #[allow(clippy::cast_precision_loss)]
     fn calculate(&self, json: &[u8]) -> Result<Value> {
         let value = self.value.calculate(json)?;
         match value {
