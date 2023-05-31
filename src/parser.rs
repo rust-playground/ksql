@@ -16,7 +16,7 @@
 
 use crate::lexer::{Token, TokenKind, Tokenizer};
 use anyhow::anyhow;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, SecondsFormat, Utc};
 use gjson::Kind;
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -250,6 +250,12 @@ impl<'a> Parser<'a> {
                                     } else {
                                         expression = Box::new(value);
                                     }
+                                }
+                                "_string_" => {
+                                    expression = Box::new(COERCEString { value: expression });
+                                }
+                                "_number_" => {
+                                    expression = Box::new(COERCENumber { value: expression });
                                 }
                                 "_lowercase_" => {
                                     expression = Box::new(CoerceLowercase { value: expression });
@@ -503,6 +509,52 @@ impl Expression for Between {
             (v, lhs, rhs) => Err(Error::UnsupportedTypeComparison(format!(
                 "{v} BETWEEN {lhs} {rhs}",
             ))),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct COERCENumber {
+    value: BoxedExpression,
+}
+
+impl Expression for COERCENumber {
+    fn calculate(&self, json: &[u8]) -> Result<Value> {
+        let value = self.value.calculate(json)?;
+        match value {
+            Value::String(s) => Ok(Value::Number(
+                s.parse::<f64>()
+                    .map_err(|e| Error::UnsupportedCOERCE(e.to_string()))?,
+            )),
+            Value::Number(num) => Ok(Value::Number(num)),
+            Value::Bool(b) => Ok(Value::Number(if b { 1.0 } else { 0.0 })),
+            Value::DateTime(dt) => Ok(Value::Number(dt.timestamp_nanos() as f64)),
+            _ => Err(Error::UnsupportedCOERCE(
+                format!("{value} COERCE datetime",),
+            )),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct COERCEString {
+    value: BoxedExpression,
+}
+
+impl Expression for COERCEString {
+    fn calculate(&self, json: &[u8]) -> Result<Value> {
+        let value = self.value.calculate(json)?;
+        match value {
+            Value::Null => Ok(Value::String("null".to_string())),
+            Value::String(s) => Ok(Value::String(s)),
+            Value::Number(num) => Ok(Value::String(num.to_string())),
+            Value::Bool(b) => Ok(Value::String(b.to_string())),
+            Value::DateTime(dt) => Ok(Value::String(
+                dt.to_rfc3339_opts(SecondsFormat::AutoSi, true),
+            )),
+            _ => Err(Error::UnsupportedCOERCE(
+                format!("{value} COERCE datetime",),
+            )),
         }
     }
 }
@@ -1646,6 +1698,100 @@ mod tests {
         let ex = Parser::parse(expression)?;
         let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(true), result);
+
+        Ok(())
+    }
+
+    #[test]
+    fn coerce_number() -> anyhow::Result<()> {
+        let src = r#"{"key":1}"#.as_bytes();
+        let expression = "COERCE .key _number_";
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate(src)?;
+        assert_eq!(r#"1.0"#, format!("{result}"));
+
+        let src = r#"{"key":"2"}"#.as_bytes();
+        let expression = "COERCE .key _number_";
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate(src)?;
+        assert_eq!(r#"2.0"#, format!("{result}"));
+
+        let src = r#"{"key":true}"#.as_bytes();
+        let expression = "COERCE .key _number_";
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate(src)?;
+        assert_eq!(r#"1.0"#, format!("{result}"));
+
+        let src = r#"{"key":false}"#.as_bytes();
+        let expression = "COERCE .key _number_";
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate(src)?;
+        assert_eq!(r#"0.0"#, format!("{result}"));
+
+        let src = r#"{"key":"2023-05-30T06:21:05Z"}"#.as_bytes();
+        let expression = "COERCE .key _datetime_,_number_";
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate(src)?;
+        assert_eq!(r#"1.685427665e18"#, format!("{result}"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn coerce_string() -> anyhow::Result<()> {
+        let src = r#"{"name":"Joeybloggs"}"#.as_bytes();
+        let expression = "COERCE .name _string_";
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate(src)?;
+        assert_eq!(r#""Joeybloggs""#, format!("{result}"));
+
+        let src = r#"{"name":null}"#.as_bytes();
+        let expression = "COERCE .name _string_";
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate(src)?;
+        assert_eq!(r#""null""#, format!("{result}"));
+
+        let src = r#"{"name":true}"#.as_bytes();
+        let expression = "COERCE .name _string_";
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate(src)?;
+        assert_eq!(r#""true""#, format!("{result}"));
+
+        let src = r#"{"name":false}"#.as_bytes();
+        let expression = "COERCE .name _string_";
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate(src)?;
+        assert_eq!(r#""false""#, format!("{result}"));
+
+        let src = r#"{"name":10}"#.as_bytes();
+        let expression = "COERCE .name _string_";
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate(src)?;
+        assert_eq!(r#""10""#, format!("{result}"));
+
+        let src = r#"{"name":10.03}"#.as_bytes();
+        let expression = "COERCE .name _string_";
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate(src)?;
+        assert_eq!(r#""10.03""#, format!("{result}"));
+
+        let src = r#"{"name":10.03}"#.as_bytes();
+        let expression = "COERCE .name _string_";
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate(src)?;
+        assert_eq!(r#""10.03""#, format!("{result}"));
+
+        let src = r#"{"name":"2023-05-30T06:21:05Z"}"#.as_bytes();
+        let expression = "COERCE .name _datetime_,_string_";
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate(src)?;
+        assert_eq!(r#""2023-05-30T06:21:05Z""#, format!("{result}"));
+
+        let src = r#"{"name":"Joeybloggs","age":39}"#.as_bytes();
+        let expression = ".name + ' - Age ' + COERCE .age _string_";
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate(src)?;
+        assert_eq!(r#""Joeybloggs - Age 39""#, format!("{result}"));
 
         Ok(())
     }

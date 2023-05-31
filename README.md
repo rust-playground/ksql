@@ -74,12 +74,14 @@ Expressions support most mathematical and string expressions see below for detai
 
 #### COERCE Types
 
-| Type          | Description                                                                                            |
-|---------------|--------------------------------------------------------------------------------------------------------|
-| `_datetime_`  | This attempts to convert the type into a DateTime.                                                     |
-| `_lowercase_` | This converts the text into lowercase.                                                                 |
-| `_uppercase_` | This converts the text into uppercase.                                                                 |
-| `_title_`     | This converts the text into title case, when the first letter is capitalized but the rest lower cased. |
+| Type          | Description                                                                                                              |
+|---------------|--------------------------------------------------------------------------------------------------------------------------|
+| `_datetime_`  | This attempts to convert the type into a DateTime.                                                                       |
+| `_lowercase_` | This converts the text into lowercase.                                                                                   |
+| `_uppercase_` | This converts the text into uppercase.                                                                                   |
+| `_title_`     | This converts the text into title case, when the first letter is capitalized but the rest lower cased.                   |
+| `_string_`    | This converts the value into a string and supports the Value's String, Number, Bool, DateTime with nanosecond precision. |
+| `_number_`    | This converts the value into an f64 number and supports the Value's Null, String, Number, Bool and DateTime.             |
 
 #### License
 
