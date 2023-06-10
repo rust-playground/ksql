@@ -26,7 +26,12 @@ use std::sync::{OnceLock, RwLock};
 use thiserror::Error;
 
 /// Represents a Custom Coercion function.
-pub type CustomCoercion = fn(expression: BoxedExpression) -> BoxedExpression;
+/// It accepts if the previous value being parsed during the coercion is constant eligible
+/// eg. a String to a DateTime and the previous expression.
+///
+/// It returns if the coercion is still constant eligible and the new boxed expression.
+pub type CustomCoercion =
+    fn(const_eligible: bool, expression: BoxedExpression) -> Result<(bool, BoxedExpression)>;
 
 /// Returns a HasMap of custom coercions guarded by a Mutex for use allowing registration or
 /// removal of custom coercions.
@@ -233,7 +238,7 @@ impl<'a> Parser<'a> {
             TokenKind::Coerce => {
                 // COERCE <expression> _<datatype>_
                 let next_token = self.next_operator_token(token)?;
-                let const_eligible = matches!(
+                let mut const_eligible = matches!(
                     next_token.kind,
                     TokenKind::QuotedString
                         | TokenKind::Number
@@ -281,7 +286,9 @@ impl<'a> Parser<'a> {
                                     // lets see if there are any custom coercions.
                                     let hm = custom_coercions().read().unwrap();
                                     if let Some(f) = hm.get(ident) {
-                                        expression = f(expression);
+                                        let (ce, ne) = f(const_eligible, expression)?;
+                                        const_eligible = ce;
+                                        expression = ne;
                                     } else {
                                         return Err(anyhow!(
                                             "invalid COERCE data type '{:?}'",
@@ -1122,6 +1129,9 @@ pub enum Error {
 
     #[error("unsupported COERCE: {0}")]
     UnsupportedCOERCE(String),
+
+    #[error("{0}")]
+    Custom(String),
 }
 
 #[cfg(test)]
@@ -2018,8 +2028,8 @@ mod tests {
 
         {
             let mut hm = custom_coercions().write().unwrap();
-            hm.insert("_star_".to_string(), |expression| {
-                Box::new(Star { expression })
+            hm.insert("_star_".to_string(), |_, expression| {
+                Ok((true, Box::new(Star { expression })))
             });
         }
 

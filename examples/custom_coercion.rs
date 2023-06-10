@@ -23,8 +23,8 @@ fn main() -> anyhow::Result<()> {
         // Add custom coercion to the parser.
         // REMEMBER: coercions start and end with an _(underscore).
         let mut hm = ksql::parser::custom_coercions().write().unwrap();
-        hm.insert("_star_".to_string(), |expression| {
-            Box::new(Star { expression })
+        hm.insert("_star_".to_string(), |_, expression| {
+            Ok((true, Box::new(Star { expression })))
         });
     }
 
