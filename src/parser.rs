@@ -2027,8 +2027,8 @@ mod tests {
 
         {
             let mut hm = coercions().write().unwrap();
-            hm.insert("_star_".to_string(), |_, expression| {
-                Ok((true, Box::new(Star { expression })))
+            hm.insert("_star_".to_string(), |const_eligible, expression| {
+                Ok((const_eligible, Box::new(Star { expression })))
             });
         }
 
