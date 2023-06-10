@@ -33,11 +33,43 @@ use thiserror::Error;
 pub type CustomCoercion =
     fn(const_eligible: bool, expression: BoxedExpression) -> Result<(bool, BoxedExpression)>;
 
-/// Returns a HasMap of custom coercions guarded by a Mutex for use allowing registration or
-/// removal of custom coercions.
-pub fn custom_coercions() -> &'static RwLock<HashMap<String, CustomCoercion>> {
+/// Returns a HasMap of all coercions guarded by a Mutex for use allowing registration or
+/// removal or even replacing of existing coercions.
+pub fn coercions() -> &'static RwLock<HashMap<String, CustomCoercion>> {
     static CUSTOM_COERCIONS: OnceLock<RwLock<HashMap<String, CustomCoercion>>> = OnceLock::new();
-    CUSTOM_COERCIONS.get_or_init(|| RwLock::new(HashMap::new()))
+    CUSTOM_COERCIONS.get_or_init(|| {
+        let mut m: HashMap<String, CustomCoercion> = HashMap::new();
+        m.insert("_datetime_".to_string(), |const_eligible, expression| {
+            let value = COERCEDateTime { value: expression };
+            if const_eligible {
+                Ok((
+                    true,
+                    Box::new(CoercedConst {
+                        value: value.calculate(&[])?,
+                    }),
+                ))
+            } else {
+                Ok((false, Box::new(value)))
+            }
+        });
+        m.insert("_string_".to_string(), |_, expression| {
+            Ok((false, Box::new(COERCEString { value: expression })))
+        });
+        m.insert("_number_".to_string(), |_, expression| {
+            Ok((false, Box::new(COERCENumber { value: expression })))
+        });
+        m.insert("_lowercase_".to_string(), |_, expression| {
+            Ok((false, Box::new(CoerceLowercase { value: expression })))
+        });
+        m.insert("_uppercase_".to_string(), |_, expression| {
+            Ok((false, Box::new(CoerceUppercase { value: expression })))
+        });
+        m.insert("_title_".to_string(), |_, expression| {
+            Ok((false, Box::new(CoerceTitle { value: expression })))
+        });
+
+        RwLock::new(m)
+    })
 }
 
 /// Represents the calculated Expression result.
@@ -256,47 +288,14 @@ impl<'a> Parser<'a> {
                             let ident = String::from_utf8_lossy(
                                 &self.exp[start..start + token.len as usize],
                             );
-                            match ident.as_ref() {
-                                "_datetime_" => {
-                                    let value = COERCEDateTime { value: expression };
-                                    if const_eligible {
-                                        expression = Box::new(CoercedConst {
-                                            value: value.calculate(&[])?,
-                                        });
-                                    } else {
-                                        expression = Box::new(value);
-                                    }
-                                }
-                                "_string_" => {
-                                    expression = Box::new(COERCEString { value: expression });
-                                }
-                                "_number_" => {
-                                    expression = Box::new(COERCENumber { value: expression });
-                                }
-                                "_lowercase_" => {
-                                    expression = Box::new(CoerceLowercase { value: expression });
-                                }
-                                "_uppercase_" => {
-                                    expression = Box::new(CoerceUppercase { value: expression });
-                                }
-                                "_title_" => {
-                                    expression = Box::new(CoerceTitle { value: expression });
-                                }
-                                ident => {
-                                    // lets see if there are any custom coercions.
-                                    let hm = custom_coercions().read().unwrap();
-                                    if let Some(f) = hm.get(ident) {
-                                        let (ce, ne) = f(const_eligible, expression)?;
-                                        const_eligible = ce;
-                                        expression = ne;
-                                    } else {
-                                        return Err(anyhow!(
-                                            "invalid COERCE data type '{:?}'",
-                                            &ident
-                                        ));
-                                    }
-                                }
-                            };
+                            let hm = coercions().read().unwrap();
+                            if let Some(f) = hm.get(ident.as_ref()) {
+                                let (ce, ne) = f(const_eligible, expression)?;
+                                const_eligible = ce;
+                                expression = ne;
+                            } else {
+                                return Err(anyhow!("invalid COERCE data type '{:?}'", &ident));
+                            }
                         } else {
                             return Err(anyhow!(
                                 "COERCE missing data type identifier, found instead: {:?}",
@@ -2027,7 +2026,7 @@ mod tests {
         }
 
         {
-            let mut hm = custom_coercions().write().unwrap();
+            let mut hm = coercions().write().unwrap();
             hm.insert("_star_".to_string(), |_, expression| {
                 Ok((true, Box::new(Star { expression })))
             });
