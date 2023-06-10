@@ -19,10 +19,21 @@ use anyhow::anyhow;
 use chrono::{DateTime, SecondsFormat, Utc};
 use gjson::Kind;
 use serde::Serialize;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt::{Debug, Display, Formatter};
 use std::iter::Peekable;
+use std::sync::{OnceLock, RwLock};
 use thiserror::Error;
+
+/// Represents a Custom Coercion function.
+pub type CustomCoercion = fn(expression: BoxedExpression) -> BoxedExpression;
+
+/// Returns a HasMap of custom coercions guarded by a Mutex for use allowing registration or
+/// removal of custom coercions.
+pub fn custom_coercions() -> &'static RwLock<HashMap<String, CustomCoercion>> {
+    static CUSTOM_COERCIONS: OnceLock<RwLock<HashMap<String, CustomCoercion>>> = OnceLock::new();
+    CUSTOM_COERCIONS.get_or_init(|| RwLock::new(HashMap::new()))
+}
 
 /// Represents the calculated Expression result.
 #[derive(Debug, PartialEq, Clone, Serialize)]
@@ -266,8 +277,17 @@ impl<'a> Parser<'a> {
                                 "_title_" => {
                                     expression = Box::new(CoerceTitle { value: expression });
                                 }
-                                _ => {
-                                    return Err(anyhow!("invalid COERCE data type '{:?}'", &ident))
+                                ident => {
+                                    // lets see if there are any custom coercions.
+                                    let hm = custom_coercions().read().unwrap();
+                                    if let Some(f) = hm.get(ident) {
+                                        expression = f(expression);
+                                    } else {
+                                        return Err(anyhow!(
+                                            "invalid COERCE data type '{:?}'",
+                                            &ident
+                                        ));
+                                    }
                                 }
                             };
                         } else {
@@ -1972,6 +1992,46 @@ mod tests {
         let ex = Parser::parse(expression)?;
         let result = ex.calculate(src)?;
         assert_eq!(Value::Bool(false), result);
+
+        Ok(())
+    }
+
+    #[test]
+    fn custom_coerce() -> anyhow::Result<()> {
+        #[derive(Debug)]
+        struct Star {
+            expression: Box<dyn Expression>,
+        }
+
+        impl Expression for Star {
+            fn calculate(&self, json: &[u8]) -> Result<Value> {
+                let inner = self.expression.calculate(json)?;
+
+                match inner {
+                    Value::String(s) => Ok(Value::String("*".repeat(s.len()))),
+                    value => Err(Error::UnsupportedCOERCE(format!(
+                        "cannot star value {value}"
+                    ))),
+                }
+            }
+        }
+
+        {
+            let mut hm = custom_coercions().write().unwrap();
+            hm.insert("_star_".to_string(), |expression| {
+                Box::new(Star { expression })
+            });
+        }
+
+        let expression = r#"COERCE "My Name" _star_"#;
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate("{}".as_bytes())?;
+        assert_eq!(Value::String("*******".to_string()), result);
+
+        let expression = r#"COERCE 1234 _string_,_star_"#;
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate("{}".as_bytes())?;
+        assert_eq!(Value::String("****".to_string()), result);
 
         Ok(())
     }
