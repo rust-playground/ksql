@@ -33,7 +33,7 @@ use thiserror::Error;
 pub type CustomCoercion =
     fn(const_eligible: bool, expression: BoxedExpression) -> Result<(bool, BoxedExpression)>;
 
-/// Returns a `HasMap` of all coercions guarded by a Mutex for use allowing registration or
+/// Returns a `HasMap` of all coercions guarded by a Mutex for use allowing registration,
 /// removal or even replacing of existing coercions.
 pub fn coercions() -> &'static RwLock<HashMap<String, CustomCoercion>> {
     static CUSTOM_COERCIONS: OnceLock<RwLock<HashMap<String, CustomCoercion>>> = OnceLock::new();
