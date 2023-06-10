@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.11.0] - 2023-06-10
 ### Added
-- Ability to register custom COERCE types.
+- Ability to register new, remove existing and replace existing COERCE types.
 
 ## [0.10.0] - 2023-05-31
 ### Added
