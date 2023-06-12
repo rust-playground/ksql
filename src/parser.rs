@@ -43,7 +43,7 @@ pub fn coercions() -> &'static RwLock<HashMap<String, CustomCoercion>> {
             let value = COERCEDateTime { value: expression };
             if const_eligible {
                 Ok((
-                    true,
+                    const_eligible,
                     Box::new(CoercedConst {
                         value: value.calculate(&[])?,
                     }),
@@ -52,20 +52,70 @@ pub fn coercions() -> &'static RwLock<HashMap<String, CustomCoercion>> {
                 Ok((false, Box::new(value)))
             }
         });
-        m.insert("_string_".to_string(), |_, expression| {
-            Ok((false, Box::new(COERCEString { value: expression })))
+        m.insert("_string_".to_string(), |const_eligible, expression| {
+            let value = COERCEString { value: expression };
+            if const_eligible {
+                Ok((
+                    const_eligible,
+                    Box::new(CoercedConst {
+                        value: value.calculate(&[])?,
+                    }),
+                ))
+            } else {
+                Ok((false, Box::new(value)))
+            }
         });
-        m.insert("_number_".to_string(), |_, expression| {
-            Ok((false, Box::new(COERCENumber { value: expression })))
+        m.insert("_number_".to_string(), |const_eligible, expression| {
+            let value = COERCENumber { value: expression };
+            if const_eligible {
+                Ok((
+                    const_eligible,
+                    Box::new(CoercedConst {
+                        value: value.calculate(&[])?,
+                    }),
+                ))
+            } else {
+                Ok((false, Box::new(value)))
+            }
         });
-        m.insert("_lowercase_".to_string(), |_, expression| {
-            Ok((false, Box::new(CoerceLowercase { value: expression })))
+        m.insert("_lowercase_".to_string(), |const_eligible, expression| {
+            let value = CoerceLowercase { value: expression };
+            if const_eligible {
+                Ok((
+                    const_eligible,
+                    Box::new(CoercedConst {
+                        value: value.calculate(&[])?,
+                    }),
+                ))
+            } else {
+                Ok((false, Box::new(value)))
+            }
         });
-        m.insert("_uppercase_".to_string(), |_, expression| {
-            Ok((false, Box::new(CoerceUppercase { value: expression })))
+        m.insert("_uppercase_".to_string(), |const_eligible, expression| {
+            let value = CoerceUppercase { value: expression };
+            if const_eligible {
+                Ok((
+                    const_eligible,
+                    Box::new(CoercedConst {
+                        value: value.calculate(&[])?,
+                    }),
+                ))
+            } else {
+                Ok((false, Box::new(value)))
+            }
         });
-        m.insert("_title_".to_string(), |_, expression| {
-            Ok((false, Box::new(CoerceTitle { value: expression })))
+        m.insert("_title_".to_string(), |const_eligible, expression| {
+            let value = CoerceTitle { value: expression };
+            if const_eligible {
+                Ok((
+                    const_eligible,
+                    Box::new(CoercedConst {
+                        value: value.calculate(&[])?,
+                    }),
+                ))
+            } else {
+                Ok((false, Box::new(value)))
+            }
         });
 
         RwLock::new(m)
