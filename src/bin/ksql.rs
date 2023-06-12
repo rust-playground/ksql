@@ -33,30 +33,23 @@ fn main() -> anyhow::Result<()> {
         let bytes = data.as_bytes();
         let v = ex.calculate(bytes)?;
         if opts.output_original {
-            match v {
-                Value::Bool(output_original) if output_original => {
-                    stdout.write_all(bytes)?;
-                    let _ = stdout.write(&[b'\n'])?;
-                }
-                _ => {}
+            if let Value::Bool(true) = v {
+                stdout.write_all(bytes)?;
+                let _ = stdout.write(&[b'\n'])?;
             }
         } else {
             serde_json::to_writer(&mut stdout, &v)?;
             let _ = stdout.write(&[b'\n'])?;
         }
     } else {
-        let stdin = stdin();
-        let mut stdin = stdin.lock();
+        let mut stdin = stdin().lock();
         let mut data = Vec::new();
 
         if opts.output_original {
             while stdin.read_until(b'\n', &mut data)? > 0 {
                 let v = ex.calculate(&data)?;
-                match v {
-                    Value::Bool(output_original) if output_original => {
-                        stdout.write_all(&data)?;
-                    }
-                    _ => {}
+                if let Value::Bool(true) = v {
+                    stdout.write_all(&data)?;
                 }
                 data.clear();
             }
