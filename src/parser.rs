@@ -134,8 +134,15 @@ pub fn coercions() -> &'static RwLock<HashMap<String, CustomCoercion>> {
 
                 let _ = parser.tokenizer.next().map_or_else(
                     || Err(Error::Custom("Expected [ after _substr_".to_string())),
-                    Ok,
-                )??;
+                    |v| {
+                        let v = v.map_err(|e| Error::InvalidCOERCE(e.to_string()))?;
+                        if v.kind != TokenKind::OpenBracket {
+                            Err(Error::Custom("Expected [ after _substr_".to_string()))
+                        } else {
+                            Ok(v)
+                        }
+                    },
+                )?;
 
                 let start_idx = match parser.tokenizer.next().map_or_else(
                     || {
@@ -172,8 +179,15 @@ pub fn coercions() -> &'static RwLock<HashMap<String, CustomCoercion>> {
                 if start_idx.is_some() {
                     let _ = parser.tokenizer.next().map_or_else(
                         || Err(Error::Custom("Expected : after _substr_[n".to_string())),
-                        Ok,
-                    )??;
+                        |v| {
+                            let v = v.map_err(|e| Error::InvalidCOERCE(e.to_string()))?;
+                            if v.kind != TokenKind::Colon {
+                                Err(Error::Custom("Expected : after _substr_[n".to_string()))
+                            } else {
+                                Ok(v)
+                            }
+                        },
+                    )?;
                 }
 
                 let end_idx = match parser.tokenizer.next().map_or_else(
@@ -211,8 +225,15 @@ pub fn coercions() -> &'static RwLock<HashMap<String, CustomCoercion>> {
                 if end_idx.is_some() {
                     let _ = parser.tokenizer.next().map_or_else(
                         || Err(Error::Custom("Expected ] after _substr_[n:n".to_string())),
-                        Ok,
-                    )??;
+                        |v| {
+                            let v = v.map_err(|e| Error::InvalidCOERCE(e.to_string()))?;
+                            if v.kind != TokenKind::CloseBracket {
+                                Err(Error::Custom("Expected : after _substr_[n:n".to_string()))
+                            } else {
+                                Ok(v)
+                            }
+                        },
+                    )?;
                 }
 
                 match (start_idx, end_idx) {
