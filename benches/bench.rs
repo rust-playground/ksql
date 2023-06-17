@@ -53,6 +53,16 @@ fn benchmark_lexer(c: &mut Criterion) {
 fn benchmark_expressions_execution(c: &mut Criterion) {
     let mut group = c.benchmark_group("expressions_execution_add");
     for (name, src, expression) in [
+        (
+            "coerce_spsubstr_const_eg_str",
+            r#"{}"#.as_bytes(),
+            r#"COERCE "Mr. Joeybloggs" _substr_[4:] == "JoeyBloggs""#,
+        ),
+        (
+            "coerce_spsubstr_eg_str",
+            r#"{"name":"Mr. Joeybloggs"}"#.as_bytes(),
+            r#"COERCE .name _substr_[4:] == "JoeyBloggs""#,
+        ),
         ("num_num", "".as_bytes(), "1 + 1"),
         ("sp_num", r#"{"field1":1}"#.as_bytes(), ".field1 + 1"),
         (
