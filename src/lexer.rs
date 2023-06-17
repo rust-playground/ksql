@@ -32,8 +32,9 @@
 //! | `StartsWith`    | `STARTSWITH `            | Ends with whitespace blank space.                                                                                                                                                         |
 //! | `EndsWith`      | `ENDSWITH `              | Ends with whitespace blank space.                                                                                                                                                         |
 //! | `NULL`          | `NULL`                   | N/A                                                                                                                                                                                       |
-//! | `Coerce`       | `COERCE`                 | Coerces one data type into another using in combination with 'Identifier'. Syntax is `COERCE <expression> _identifer_`.                                                                   |
-//! | `Identifier`   | `_identifier_`           | Starts and end with an `_` used with 'COERCE' to cast data types, see table below with supported values. You can combine multiple coercions if separated by a COMMA.                      |
+//! | `Coerce`        | `COERCE`                 | Coerces one data type into another using in combination with 'Identifier'. Syntax is `COERCE <expression> _identifer_`.                                                                   |
+//! | `Identifier`    | `_identifier_`           | Starts and end with an `_` used with 'COERCE' to cast data types, see table below with supported values. You can combine multiple coercions if separated by a COMMA.                      |
+//! | `Colon`         | `:`                      | N/A                                                                                                                                                                                       |
 //!
 //! #### COERCE Types
 //!
@@ -43,6 +44,9 @@
 //! | `_lowercase_` | This converts the text into lowercase.                                                                 |
 //! | `_uppercase_` | This converts the text into uppercase.                                                                 |
 //! | `_title_`     | This converts the text into title case, when the first letter is capitalized but the rest lower cased. |
+//! | `_string_`      | This converts the value into a string and supports the Value's String, Number, Bool, `DateTime` with nanosecond precision. |
+//! | `_number_`      | This converts the value into an f64 number and supports the Value's Null, String, Number, Bool and `DateTime`.             |
+//! | `_substr_[n:n]` | This allows taking a substring of a string value. this returns Null if no match at specified indices exits.              |
 //!
 
 use thiserror::Error;
@@ -90,6 +94,7 @@ pub enum TokenKind {
     CloseParen,
     Coerce,
     Identifier,
+    Colon,
 }
 
 /// A lexer for the KSQL expression syntax.
@@ -238,6 +243,7 @@ fn tokenize_single_token(data: &[u8]) -> Result<(TokenKind, u16)> {
         b']' => (TokenKind::CloseBracket, 1),
         b',' => (TokenKind::Comma, 1),
         b'!' => (TokenKind::Not, 1),
+        b':' => (TokenKind::Colon, 1),
         b'"' | b'\'' => tokenize_string(data, *b)?,
         b'.' => tokenize_selector_path(data)?,
         b't' | b'f' => tokenize_bool(data)?,
@@ -276,7 +282,7 @@ fn tokenize_single_token(data: &[u8]) -> Result<(TokenKind, u16)> {
 fn tokenize_identifier(data: &[u8]) -> Result<(TokenKind, u16)> {
     // TODO: take until end underscore found!
     match take_while(data, |c| {
-        !c.is_ascii_whitespace() && c != b')' && c != b']' && c != b','
+        !c.is_ascii_whitespace() && c != b')' && c != b'[' && c != b']' && c != b','
     }) {
         // identifier must start and end with underscore
         Some(end) if end > 0 && data.get(end as usize - 1) == Some(&b'_') => {

@@ -30,16 +30,20 @@ use thiserror::Error;
 /// eg. a String to a `DateTime` and the previous expression.
 ///
 /// It returns if the coercion is still constant eligible and the new boxed expression.
-pub type CustomCoercion =
-    fn(const_eligible: bool, expression: BoxedExpression) -> Result<(bool, BoxedExpression)>;
+pub type CustomCoercion = fn(
+    tokenizer: &mut Parser,
+    const_eligible: bool,
+    expression: BoxedExpression,
+) -> anyhow::Result<(bool, BoxedExpression)>;
 
 /// Returns a `HasMap` of all coercions guarded by a Mutex for use allowing registration,
 /// removal or even replacing of existing coercions.
+#[allow(clippy::too_many_lines)]
 pub fn coercions() -> &'static RwLock<HashMap<String, CustomCoercion>> {
     static CUSTOM_COERCIONS: OnceLock<RwLock<HashMap<String, CustomCoercion>>> = OnceLock::new();
     CUSTOM_COERCIONS.get_or_init(|| {
         let mut m: HashMap<String, CustomCoercion> = HashMap::new();
-        m.insert("_datetime_".to_string(), |const_eligible, expression| {
+        m.insert("_datetime_".to_string(), |_, const_eligible, expression| {
             let value = COERCEDateTime { value: expression };
             if const_eligible {
                 Ok((
@@ -52,7 +56,7 @@ pub fn coercions() -> &'static RwLock<HashMap<String, CustomCoercion>> {
                 Ok((false, Box::new(value)))
             }
         });
-        m.insert("_string_".to_string(), |const_eligible, expression| {
+        m.insert("_string_".to_string(), |_, const_eligible, expression| {
             let value = COERCEString { value: expression };
             if const_eligible {
                 Ok((
@@ -65,7 +69,7 @@ pub fn coercions() -> &'static RwLock<HashMap<String, CustomCoercion>> {
                 Ok((false, Box::new(value)))
             }
         });
-        m.insert("_number_".to_string(), |const_eligible, expression| {
+        m.insert("_number_".to_string(), |_, const_eligible, expression| {
             let value = COERCENumber { value: expression };
             if const_eligible {
                 Ok((
@@ -78,33 +82,39 @@ pub fn coercions() -> &'static RwLock<HashMap<String, CustomCoercion>> {
                 Ok((false, Box::new(value)))
             }
         });
-        m.insert("_lowercase_".to_string(), |const_eligible, expression| {
-            let value = CoerceLowercase { value: expression };
-            if const_eligible {
-                Ok((
-                    const_eligible,
-                    Box::new(CoercedConst {
-                        value: value.calculate(&[])?,
-                    }),
-                ))
-            } else {
-                Ok((false, Box::new(value)))
-            }
-        });
-        m.insert("_uppercase_".to_string(), |const_eligible, expression| {
-            let value = CoerceUppercase { value: expression };
-            if const_eligible {
-                Ok((
-                    const_eligible,
-                    Box::new(CoercedConst {
-                        value: value.calculate(&[])?,
-                    }),
-                ))
-            } else {
-                Ok((false, Box::new(value)))
-            }
-        });
-        m.insert("_title_".to_string(), |const_eligible, expression| {
+        m.insert(
+            "_lowercase_".to_string(),
+            |_, const_eligible, expression| {
+                let value = CoerceLowercase { value: expression };
+                if const_eligible {
+                    Ok((
+                        const_eligible,
+                        Box::new(CoercedConst {
+                            value: value.calculate(&[])?,
+                        }),
+                    ))
+                } else {
+                    Ok((false, Box::new(value)))
+                }
+            },
+        );
+        m.insert(
+            "_uppercase_".to_string(),
+            |_, const_eligible, expression| {
+                let value = CoerceUppercase { value: expression };
+                if const_eligible {
+                    Ok((
+                        const_eligible,
+                        Box::new(CoercedConst {
+                            value: value.calculate(&[])?,
+                        }),
+                    ))
+                } else {
+                    Ok((false, Box::new(value)))
+                }
+            },
+        );
+        m.insert("_title_".to_string(), |_, const_eligible, expression| {
             let value = CoerceTitle { value: expression };
             if const_eligible {
                 Ok((
@@ -117,7 +127,146 @@ pub fn coercions() -> &'static RwLock<HashMap<String, CustomCoercion>> {
                 Ok((false, Box::new(value)))
             }
         });
+        m.insert(
+            "_substr_".to_string(),
+            |parser, const_eligible, expression| {
+                // get substring info, expect the format to be _substr_[start:end]
 
+                let _ = parser.tokenizer.next().map_or_else(
+                    || Err(Error::Custom("Expected [ after _substr_".to_string())),
+                    |v| {
+                        let v = v.map_err(|e| Error::InvalidCOERCE(e.to_string()))?;
+                        if v.kind == TokenKind::OpenBracket {
+                            Ok(v)
+                        } else {
+                            Err(Error::Custom("Expected [ after _substr_".to_string()))
+                        }
+                    },
+                )?;
+
+                let start_idx = match parser.tokenizer.next().map_or_else(
+                    || {
+                        Err(Error::Custom(
+                            "Expected number or colon after _substr_[".to_string(),
+                        ))
+                    },
+                    Ok,
+                )?? {
+                    Token {
+                        kind: TokenKind::Number,
+                        start,
+                        len,
+                    } => {
+                        let start = start as usize;
+                        Some(
+                            String::from_utf8_lossy(&parser.exp[start..start + len as usize])
+                                .parse::<usize>()?,
+                        )
+                    }
+                    Token {
+                        kind: TokenKind::Colon,
+                        ..
+                    } => None,
+                    tok => {
+                        let start = tok.start as usize;
+                        return Err(Error::Custom(format!(
+                            "Expected number after _substr_[ but got {}",
+                            String::from_utf8_lossy(&parser.exp[start..start + tok.len as usize])
+                        )))?;
+                    }
+                };
+
+                if start_idx.is_some() {
+                    let _ = parser.tokenizer.next().map_or_else(
+                        || Err(Error::Custom("Expected : after _substr_[n".to_string())),
+                        |v| {
+                            let v = v.map_err(|e| Error::InvalidCOERCE(e.to_string()))?;
+                            if v.kind == TokenKind::Colon {
+                                Ok(v)
+                            } else {
+                                Err(Error::Custom("Expected : after _substr_[n".to_string()))
+                            }
+                        },
+                    )?;
+                }
+
+                let end_idx = match parser.tokenizer.next().map_or_else(
+                    || {
+                        Err(Error::Custom(
+                            "Expected number or ] after _substr_[n:".to_string(),
+                        ))
+                    },
+                    Ok,
+                )?? {
+                    Token {
+                        kind: TokenKind::Number,
+                        start,
+                        len,
+                    } => {
+                        let start = start as usize;
+                        Some(
+                            String::from_utf8_lossy(&parser.exp[start..start + len as usize])
+                                .parse::<usize>()?,
+                        )
+                    }
+                    Token {
+                        kind: TokenKind::CloseBracket,
+                        ..
+                    } => None,
+                    tok => {
+                        let start = tok.start as usize;
+                        return Err(Error::Custom(format!(
+                            "Expected number after _substr_[n: but got {}",
+                            String::from_utf8_lossy(&parser.exp[start..start + tok.len as usize])
+                        )))?;
+                    }
+                };
+
+                if end_idx.is_some() {
+                    let _ = parser.tokenizer.next().map_or_else(
+                        || Err(Error::Custom("Expected ] after _substr_[n:n".to_string())),
+                        |v| {
+                            let v = v.map_err(|e| Error::InvalidCOERCE(e.to_string()))?;
+                            if v.kind == TokenKind::CloseBracket {
+                                Ok(v)
+                            } else {
+                                Err(Error::Custom("Expected ] after _substr_[n:n".to_string()))
+                            }
+                        },
+                    )?;
+                }
+
+                match (start_idx, end_idx) {
+                    (Some(start), Some(end)) if start > end => {
+                        return Err(Error::Custom(format!(
+                            "Start index {start} is greater than end index {end}"
+                        )))?;
+                    }
+                    (None, None) => {
+                        return Err(Error::Custom(
+                            "Start and end index for substr cannot both be None".to_string(),
+                        ))?;
+                    }
+                    _ => {}
+                }
+
+                let value = CoerceSubstr {
+                    value: expression,
+                    start_idx,
+                    end_idx,
+                };
+                if const_eligible {
+                    Ok((
+                        const_eligible,
+                        Box::new(CoercedConst {
+                            value: value.calculate(&[])?,
+                        }),
+                    ))
+                } else {
+                    Ok((false, Box::new(value)))
+                }
+            },
+        );
         RwLock::new(m)
     })
 }
@@ -340,7 +489,7 @@ impl<'a> Parser<'a> {
                             );
                             let hm = coercions().read().unwrap();
                             if let Some(f) = hm.get(ident.as_ref()) {
-                                let (ce, ne) = f(const_eligible, expression)?;
+                                let (ce, ne) = f(self, const_eligible, expression)?;
                                 const_eligible = ce;
                                 expression = ne;
                             } else {
@@ -894,6 +1043,37 @@ impl Expression for CoerceTitle {
 }
 
 #[derive(Debug)]
+struct CoerceSubstr {
+    value: BoxedExpression,
+    start_idx: Option<usize>,
+    end_idx: Option<usize>,
+}
+
+impl Expression for CoerceSubstr {
+    fn calculate(&self, json: &[u8]) -> Result<Value> {
+        let v = self.value.calculate(json)?;
+        match v {
+            Value::String(s) => match (self.start_idx, self.end_idx) {
+                (Some(start), Some(end)) => Ok(s
+                    .get(start..end)
+                    .map_or_else(|| Value::Null, |s| Value::String(s.to_string()))),
+                (Some(start), None) => Ok(s
+                    .get(start..)
+                    .map_or_else(|| Value::Null, |s| Value::String(s.to_string()))),
+                (None, Some(end)) => Ok(s
+                    .get(..end)
+                    .map_or_else(|| Value::Null, |s| Value::String(s.to_string()))),
+                _ => Err(Error::UnsupportedCOERCE(format!(
+                    "COERCE substr for {s}, [{:?}:{:?}]",
+                    self.start_idx, self.end_idx
+                ))),
+            },
+            v => Err(Error::UnsupportedCOERCE(format!("{v} COERCE substr",))),
+        }
+    }
+}
+
+#[derive(Debug)]
 struct Not {
     value: BoxedExpression,
 }
@@ -1178,6 +1358,9 @@ pub enum Error {
 
     #[error("unsupported COERCE: {0}")]
     UnsupportedCOERCE(String),
+
+    #[error("invalid COERCE: {0}")]
+    InvalidCOERCE(String),
 
     #[error("{0}")]
     Custom(String),
@@ -2077,7 +2260,7 @@ mod tests {
 
         {
             let mut hm = coercions().write().unwrap();
-            hm.insert("_star_".to_string(), |const_eligible, expression| {
+            hm.insert("_star_".to_string(), |_, const_eligible, expression| {
                 Ok((const_eligible, Box::new(Star { expression })))
             });
         }
@@ -2092,6 +2275,42 @@ mod tests {
         let result = ex.calculate("{}".as_bytes())?;
         assert_eq!(Value::String("****".to_string()), result);
 
+        Ok(())
+    }
+
+    #[test]
+    fn coerce_substr() -> anyhow::Result<()> {
+        let src = r#"{"name":"Joeybloggs"}"#.as_bytes();
+        let expression = "COERCE .name _substr_[4:]";
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate(src)?;
+        assert_eq!(r#""bloggs""#, format!("{result}"));
+
+        let src = r#"{"name":"Joeybloggs"}"#.as_bytes();
+        let expression = "COERCE .name _substr_[:4]";
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate(src)?;
+        assert_eq!(r#""Joey""#, format!("{result}"));
+
+        let src = r#"{"name":"Joeybloggs"}"#.as_bytes();
+        let expression = "COERCE .name _substr_[3:5]";
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate(src)?;
+        assert_eq!(r#""yb""#, format!("{result}"));
+
+        // const eligible
+        let src = r#"{}"#.as_bytes();
+        let expression = r#"COERCE "Joeybloggs" _substr_[3:5]"#;
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate(src)?;
+        assert_eq!(r#""yb""#, format!("{result}"));
+
+        // if indexes beyond string value:
+        let src = r#"{"name":"Joeybloggs"}"#.as_bytes();
+        let expression = "COERCE .name _substr_[500:1000]";
+        let ex = Parser::parse(expression)?;
+        let result = ex.calculate(src)?;
+        assert_eq!(r#"null"#, format!("{result}"));
         Ok(())
     }
 }
