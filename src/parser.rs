@@ -136,10 +136,10 @@ pub fn coercions() -> &'static RwLock<HashMap<String, CustomCoercion>> {
                     || Err(Error::Custom("Expected [ after _substr_".to_string())),
                     |v| {
                         let v = v.map_err(|e| Error::InvalidCOERCE(e.to_string()))?;
-                        if v.kind != TokenKind::OpenBracket {
-                            Err(Error::Custom("Expected [ after _substr_".to_string()))
-                        } else {
+                        if v.kind == TokenKind::OpenBracket {
                             Ok(v)
+                        } else {
+                            Err(Error::Custom("Expected [ after _substr_".to_string()))
                         }
                     },
                 )?;
@@ -181,10 +181,10 @@ pub fn coercions() -> &'static RwLock<HashMap<String, CustomCoercion>> {
                         || Err(Error::Custom("Expected : after _substr_[n".to_string())),
                         |v| {
                             let v = v.map_err(|e| Error::InvalidCOERCE(e.to_string()))?;
-                            if v.kind != TokenKind::Colon {
-                                Err(Error::Custom("Expected : after _substr_[n".to_string()))
-                            } else {
+                            if v.kind == TokenKind::Colon {
                                 Ok(v)
+                            } else {
+                                Err(Error::Custom("Expected : after _substr_[n".to_string()))
                             }
                         },
                     )?;
@@ -227,10 +227,10 @@ pub fn coercions() -> &'static RwLock<HashMap<String, CustomCoercion>> {
                         || Err(Error::Custom("Expected ] after _substr_[n:n".to_string())),
                         |v| {
                             let v = v.map_err(|e| Error::InvalidCOERCE(e.to_string()))?;
-                            if v.kind != TokenKind::CloseBracket {
-                                Err(Error::Custom("Expected : after _substr_[n:n".to_string()))
-                            } else {
+                            if v.kind == TokenKind::CloseBracket {
                                 Ok(v)
+                            } else {
+                                Err(Error::Custom("Expected : after _substr_[n:n".to_string()))
                             }
                         },
                     )?;
