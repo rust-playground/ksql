@@ -230,7 +230,7 @@ pub fn coercions() -> &'static RwLock<HashMap<String, CustomCoercion>> {
                             if v.kind == TokenKind::CloseBracket {
                                 Ok(v)
                             } else {
-                                Err(Error::Custom("Expected : after _substr_[n:n".to_string()))
+                                Err(Error::Custom("Expected ] after _substr_[n:n".to_string()))
                             }
                         },
                     )?;
