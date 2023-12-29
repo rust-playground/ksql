@@ -1,7 +1,7 @@
 [package]
 name = "ksql"
 description = "A JSON data expression lexer, parser, cli and library"
-version = "0.12.0"
+version = "1.0.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 readme = "README.md"
@@ -17,13 +17,13 @@ keywords = [
 
 [dependencies]
 anydate = "0.3.0"
-anyhow = "1.0.71"
-chrono = { version = "0.4.26", features = ["serde"] }
-clap = { version = "4.3.0", features = ["derive"] }
+anyhow = "1.0.75"
+chrono = { version = "0.4.31", features = ["serde"] }
+clap = { version = "4.4.7", features = ["derive"] }
 gjson = "0.8.1"
-serde = { version = "1.0.163", features = ["derive"] }
-serde_json = "1.0.96"
-thiserror = "1.0.40"
+serde = { version = "1.0.192", features = ["derive"] }
+serde_json = "1.0.108"
+thiserror = "1.0.50"
 
 [dev-dependencies]
 criterion = { version = "0.5.1", features = ["html_reports"] }

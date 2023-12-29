@@ -754,7 +754,9 @@ impl Expression for COERCENumber {
             )),
             Value::Number(num) => Ok(Value::Number(num)),
             Value::Bool(b) => Ok(Value::Number(if b { 1.0 } else { 0.0 })),
-            Value::DateTime(dt) => Ok(Value::Number(dt.timestamp_nanos() as f64)),
+            Value::DateTime(dt) => Ok(Value::Number(
+                dt.timestamp_nanos_opt().unwrap_or_default() as f64
+            )),
             _ => Err(Error::UnsupportedCOERCE(
                 format!("{value} COERCE datetime",),
             )),
