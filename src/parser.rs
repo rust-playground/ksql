@@ -169,10 +169,10 @@ pub fn coercions() -> &'static RwLock<HashMap<String, CustomCoercion>> {
                     } => None,
                     tok => {
                         let start = tok.start as usize;
-                        return Err(Error::Custom(format!(
+                        Err(Error::Custom(format!(
                             "Expected number after _substr_[ but got {}",
                             String::from_utf8_lossy(&parser.exp[start..start + tok.len as usize])
-                        )))?;
+                        )))?
                     }
                 };
 
@@ -215,10 +215,10 @@ pub fn coercions() -> &'static RwLock<HashMap<String, CustomCoercion>> {
                     } => None,
                     tok => {
                         let start = tok.start as usize;
-                        return Err(Error::Custom(format!(
+                        Err(Error::Custom(format!(
                             "Expected number after _substr_[n: but got {}",
                             String::from_utf8_lossy(&parser.exp[start..start + tok.len as usize])
-                        )))?;
+                        )))?
                     }
                 };
 
@@ -237,16 +237,12 @@ pub fn coercions() -> &'static RwLock<HashMap<String, CustomCoercion>> {
                 }
 
                 match (start_idx, end_idx) {
-                    (Some(start), Some(end)) if start > end => {
-                        return Err(Error::Custom(format!(
-                            "Start index {start} is greater than end index {end}"
-                        )))?;
-                    }
-                    (None, None) => {
-                        return Err(Error::Custom(
-                            "Start and end index for substr cannot both be None".to_string(),
-                        ))?;
-                    }
+                    (Some(start), Some(end)) if start > end => Err(Error::Custom(format!(
+                        "Start index {start} is greater than end index {end}"
+                    )))?,
+                    (None, None) => Err(Error::Custom(
+                        "Start and end index for substr cannot both be None".to_string(),
+                    ))?,
                     _ => {}
                 }
 
@@ -1386,7 +1382,7 @@ mod tests {
     #[test]
     fn sp_add_sp_num() -> anyhow::Result<()> {
         let src = r#"{"field1":10.1,"field2":23.23}"#;
-        let expression = r#".field1 + .field2"#;
+        let expression = ".field1 + .field2";
 
         let ex = Parser::parse(expression)?;
         let result = ex.calculate(src.as_ref())?;
@@ -1397,7 +1393,7 @@ mod tests {
     #[test]
     fn sp_sub_sp() -> anyhow::Result<()> {
         let src = r#"{"field1":10.1,"field2":23.23}"#;
-        let expression = r#".field2 - .field1"#;
+        let expression = ".field2 - .field1";
 
         let ex = Parser::parse(expression)?;
         let result = ex.calculate(src.as_ref())?;
@@ -1408,7 +1404,7 @@ mod tests {
     #[test]
     fn sp_mult_identsp() -> anyhow::Result<()> {
         let src = r#"{"field1":11.1,"field2":3}"#;
-        let expression = r#".field2 * .field1"#;
+        let expression = ".field2 * .field1";
 
         let ex = Parser::parse(expression)?;
         let result = ex.calculate(src.as_ref())?;
@@ -1419,7 +1415,7 @@ mod tests {
     #[test]
     fn sp_div_sp() -> anyhow::Result<()> {
         let src = r#"{"field1":3,"field2":33.3}"#;
-        let expression = r#".field2 / .field1"#;
+        let expression = ".field2 / .field1";
 
         let ex = Parser::parse(expression)?;
         let result = ex.calculate(src.as_ref())?;
@@ -1430,7 +1426,7 @@ mod tests {
     #[test]
     fn num_add_num() -> anyhow::Result<()> {
         let src = "";
-        let expression = r#"11.1 + 22.2"#;
+        let expression = "11.1 + 22.2";
 
         let ex = Parser::parse(expression)?;
         let result = ex.calculate(src.as_ref())?;
@@ -1441,7 +1437,7 @@ mod tests {
     #[test]
     fn sp_add_num() -> anyhow::Result<()> {
         let src = r#"{"field1":3,"field2":33.3}"#;
-        let expression = r#"11.1 + .field1"#;
+        let expression = "11.1 + .field1";
 
         let ex = Parser::parse(expression)?;
         let result = ex.calculate(src.as_ref())?;
@@ -1452,7 +1448,7 @@ mod tests {
     #[test]
     fn sp_eq_num_false() -> anyhow::Result<()> {
         let src = r#"{"field1":3,"field2":33.3}"#;
-        let expression = r#"11.1 == .field1"#;
+        let expression = "11.1 == .field1";
 
         let ex = Parser::parse(expression)?;
         let result = ex.calculate(src.as_ref())?;
@@ -1463,7 +1459,7 @@ mod tests {
     #[test]
     fn sp_eq_num_true() -> anyhow::Result<()> {
         let src = r#"{"field1":11.1,"field2":33.3}"#;
-        let expression = r#"11.1 == .field1"#;
+        let expression = "11.1 == .field1";
 
         let ex = Parser::parse(expression)?;
         let result = ex.calculate(src.as_ref())?;
@@ -1474,7 +1470,7 @@ mod tests {
     #[test]
     fn sp_gt_num_false() -> anyhow::Result<()> {
         let src = r#"{"field1":11.1,"field2":33.3}"#;
-        let expression = r#"11.1 > .field1"#;
+        let expression = "11.1 > .field1";
 
         let ex = Parser::parse(expression)?;
         let result = ex.calculate(src.as_ref())?;
@@ -1485,7 +1481,7 @@ mod tests {
     #[test]
     fn sp_gte_num_true() -> anyhow::Result<()> {
         let src = r#"{"field1":11.1,"field2":33.3}"#;
-        let expression = r#"11.1 >= .field1"#;
+        let expression = "11.1 >= .field1";
 
         let ex = Parser::parse(expression)?;
         let result = ex.calculate(src.as_ref())?;
@@ -1742,7 +1738,7 @@ mod tests {
         let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(false), result);
 
-        let expression = r#"[] == []"#;
+        let expression = "[] == []";
         let ex = Parser::parse(expression)?;
         let result = ex.calculate("".as_bytes())?;
         assert_eq!(Value::Bool(true), result);
@@ -1973,31 +1969,31 @@ mod tests {
         let expression = "COERCE .key _number_";
         let ex = Parser::parse(expression)?;
         let result = ex.calculate(src)?;
-        assert_eq!(r#"1.0"#, format!("{result}"));
+        assert_eq!("1.0", format!("{result}"));
 
         let src = r#"{"key":"2"}"#.as_bytes();
         let expression = "COERCE .key _number_";
         let ex = Parser::parse(expression)?;
         let result = ex.calculate(src)?;
-        assert_eq!(r#"2.0"#, format!("{result}"));
+        assert_eq!("2.0", format!("{result}"));
 
         let src = r#"{"key":true}"#.as_bytes();
         let expression = "COERCE .key _number_";
         let ex = Parser::parse(expression)?;
         let result = ex.calculate(src)?;
-        assert_eq!(r#"1.0"#, format!("{result}"));
+        assert_eq!("1.0", format!("{result}"));
 
         let src = r#"{"key":false}"#.as_bytes();
         let expression = "COERCE .key _number_";
         let ex = Parser::parse(expression)?;
         let result = ex.calculate(src)?;
-        assert_eq!(r#"0.0"#, format!("{result}"));
+        assert_eq!("0.0", format!("{result}"));
 
         let src = r#"{"key":"2023-05-30T06:21:05Z"}"#.as_bytes();
         let expression = "COERCE .key _datetime_,_number_";
         let ex = Parser::parse(expression)?;
         let result = ex.calculate(src)?;
-        assert_eq!(r#"1.685427665e18"#, format!("{result}"));
+        assert_eq!("1.685427665e18", format!("{result}"));
 
         Ok(())
     }
@@ -2232,7 +2228,7 @@ mod tests {
         let result = ex.calculate(src)?;
         assert_eq!(Value::Bool(true), result);
 
-        let expression = r#".MyValue != NULL && .MyValue > 19"#;
+        let expression = ".MyValue != NULL && .MyValue > 19";
         let ex = Parser::parse(expression)?;
         let result = ex.calculate(src)?;
         assert_eq!(Value::Bool(false), result);
@@ -2272,7 +2268,7 @@ mod tests {
         let result = ex.calculate("{}".as_bytes())?;
         assert_eq!(Value::String("*******".to_string()), result);
 
-        let expression = r#"COERCE 1234 _string_,_star_"#;
+        let expression = "COERCE 1234 _string_,_star_";
         let ex = Parser::parse(expression)?;
         let result = ex.calculate("{}".as_bytes())?;
         assert_eq!(Value::String("****".to_string()), result);
@@ -2301,7 +2297,7 @@ mod tests {
         assert_eq!(r#""yb""#, format!("{result}"));
 
         // const eligible
-        let src = r#"{}"#.as_bytes();
+        let src = "{}".as_bytes();
         let expression = r#"COERCE "Joeybloggs" _substr_[3:5]"#;
         let ex = Parser::parse(expression)?;
         let result = ex.calculate(src)?;
@@ -2312,7 +2308,7 @@ mod tests {
         let expression = "COERCE .name _substr_[500:1000]";
         let ex = Parser::parse(expression)?;
         let result = ex.calculate(src)?;
-        assert_eq!(r#"null"#, format!("{result}"));
+        assert_eq!("null", format!("{result}"));
         Ok(())
     }
 }
