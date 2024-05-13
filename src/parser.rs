@@ -776,9 +776,7 @@ impl Expression for COERCEString {
             Value::DateTime(dt) => Ok(Value::String(
                 dt.to_rfc3339_opts(SecondsFormat::AutoSi, true),
             )),
-            _ => Err(Error::UnsupportedCOERCE(
-                format!("{value} COERCE datetime",),
-            )),
+            Value::Array(_)|Value::Object(_) => {Ok(Value::String(value.to_string()))}
         }
     }
 }
