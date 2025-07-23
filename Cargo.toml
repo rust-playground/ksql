@@ -2,7 +2,7 @@
 name = "ksql"
 description = "A JSON data expression lexer, parser, cli and library"
 version = "1.0.0"
-edition = "2021"
+edition = "2024"
 license = "MIT OR Apache-2.0"
 readme = "README.md"
 repository = "https://github.com/rust-playground/ksql"
@@ -16,17 +16,17 @@ keywords = [
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-anydate = "0.4.0"
-anyhow = "1.0.83"
-chrono = { version = "0.4.38", features = ["serde"] }
-clap = { version = "4.5.4", features = ["derive"] }
+anydate = "0.5.0"
+anyhow = "1.0.96"
+chrono = { version = "0.4.40", features = ["serde"] }
+clap = { version = "4.5.31", features = ["derive"] }
 gjson = "0.8.1"
-serde = { version = "1.0.201", features = ["derive"] }
-serde_json = "1.0.117"
-thiserror = "1.0.60"
+serde = { version = "1.0.218", features = ["derive"] }
+serde_json = "1.0.139"
+thiserror = "2.0.11"
 
 [dev-dependencies]
-criterion = { version = "0.5.1", features = ["html_reports"] }
+criterion = { version = "0.6.0", features = ["html_reports"] }
 
 [lib]
 bench = false

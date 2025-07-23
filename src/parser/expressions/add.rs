@@ -1,5 +1,5 @@
-use crate::parser::parse::BoxedExpression;
 use crate::parser::{Error, Expression, Result, Value};
+use crate::parser::parse::BoxedExpression;
 
 #[derive(Debug)]
 pub(in crate::parser) struct Add {

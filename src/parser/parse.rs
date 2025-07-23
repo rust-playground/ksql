@@ -377,11 +377,11 @@ impl<'a> Parser<'a> {
         let mut parser = Parser::new(expression, tokenizer);
         let result = parser.parse_expression()?;
 
-        if let Some(result) = result {
+        match result { Some(result) => {
             Ok(result)
-        } else {
+        } _ => {
             Err(anyhow!("no expression results found"))
-        }
+        }}
     }
 
     #[allow(clippy::too_many_lines)]
@@ -391,17 +391,17 @@ impl<'a> Parser<'a> {
         loop {
             if let Some(token) = self.tokenizer.next() {
                 let token = token?;
-                if let Some(expression) = current {
+                match current { Some(expression) => {
                     // CloseParen is the end of an expression block, return parsed expression.
                     if token.kind == TokenKind::CloseParen {
                         return Ok(Some(expression));
                     }
                     // look for next operation
                     current = self.parse_operation(token, expression)?;
-                } else {
+                } _ => {
                     // look for next value
                     current = Some(self.parse_value(token)?);
-                }
+                }}
             } else {
                 return Ok(current);
             }
@@ -434,13 +434,13 @@ impl<'a> Parser<'a> {
                 Ok(Box::new(Arr { arr }))
             }
             TokenKind::OpenParen => {
-                if let Some(expression) = self.parse_expression()? {
+                match self.parse_expression()? { Some(expression) => {
                     Ok(expression)
-                } else {
+                } _ => {
                     Err(anyhow!(
                         "expression after open parenthesis '(' ends unexpectedly."
                     ))
-                }
+                }}
             }
             TokenKind::SelectorPath => {
                 let start = token.start as usize;
@@ -492,13 +492,13 @@ impl<'a> Parser<'a> {
                                 &self.exp[start..start + token.len as usize],
                             );
                             let hm = coercions().read().unwrap();
-                            if let Some(f) = hm.get(ident.as_ref()) {
+                            match hm.get(ident.as_ref()) { Some(f) => {
                                 let (ce, ne) = f(self, const_eligible, expression)?;
                                 const_eligible = ce;
                                 expression = ne;
-                            } else {
+                            } _ => {
                                 return Err(anyhow!("invalid COERCE data type '{:?}'", &ident));
-                            }
+                            }}
                         } else {
                             return Err(anyhow!(
                                 "COERCE missing data type identifier, found instead: {:?}",
