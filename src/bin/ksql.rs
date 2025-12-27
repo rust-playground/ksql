@@ -1,7 +1,7 @@
 use clap::Parser as ClapParser;
 use ksql::parser::{Parser, Value};
 use std::env;
-use std::io::{stdin, stdout, BufRead, Write};
+use std::io::{stdin, stdout, BufRead, BufReader, BufWriter, Write};
 
 #[derive(Debug, ClapParser)]
 #[clap(version = env!("CARGO_PKG_VERSION"), author = env!("CARGO_PKG_AUTHORS"), about = env!("CARGO_PKG_DESCRIPTION"))]
@@ -26,8 +26,7 @@ fn main() -> anyhow::Result<()> {
 
     let ex = Parser::parse(&opts.expression)?;
 
-    let stdout = stdout();
-    let mut stdout = stdout.lock();
+    let mut stdout = BufWriter::new(stdout().lock());
 
     if let Some(data) = opts.data {
         let bytes = data.as_bytes();
@@ -35,14 +34,14 @@ fn main() -> anyhow::Result<()> {
         if opts.output_original {
             if let Value::Bool(true) = v {
                 stdout.write_all(bytes)?;
-                let _ = stdout.write(&[b'\n'])?;
+                let _ = stdout.write(b"\n")?;
             }
         } else {
             serde_json::to_writer(&mut stdout, &v)?;
-            let _ = stdout.write(&[b'\n'])?;
+            let _ = stdout.write(b"\n")?;
         }
     } else {
-        let mut stdin = stdin().lock();
+        let mut stdin = BufReader::new(stdin().lock());
         let mut data = Vec::new();
 
         if opts.output_original {
@@ -57,7 +56,7 @@ fn main() -> anyhow::Result<()> {
             while stdin.read_until(b'\n', &mut data)? > 0 {
                 let v = ex.calculate(&data)?;
                 serde_json::to_writer(&mut stdout, &v)?;
-                let _ = stdout.write(&[b'\n'])?;
+                let _ = stdout.write(b"\n")?;
                 data.clear();
             }
         }

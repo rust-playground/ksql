@@ -1357,7 +1357,7 @@ mod tests {
         let expression = "COERCE .key _datetime_,_number_";
         let ex = Parser::parse(expression)?;
         let result = ex.calculate(src)?;
-        assert_eq!("1.685427665e18", format!("{result}"));
+        assert_eq!("1.685427665e+18", format!("{result}"));
 
         Ok(())
     }
