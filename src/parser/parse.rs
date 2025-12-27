@@ -302,7 +302,7 @@ impl Display for Value {
     }
 }
 
-impl<'a> From<gjson::Value<'a>> for Value {
+impl From<gjson::Value<'_>> for Value {
     fn from(v: gjson::Value) -> Self {
         match v.kind() {
             Kind::Null => Value::Null,
@@ -377,11 +377,10 @@ impl<'a> Parser<'a> {
         let mut parser = Parser::new(expression, tokenizer);
         let result = parser.parse_expression()?;
 
-        match result { Some(result) => {
-            Ok(result)
-        } _ => {
-            Err(anyhow!("no expression results found"))
-        }}
+        match result {
+            Some(result) => Ok(result),
+            _ => Err(anyhow!("no expression results found")),
+        }
     }
 
     #[allow(clippy::too_many_lines)]
@@ -391,17 +390,20 @@ impl<'a> Parser<'a> {
         loop {
             if let Some(token) = self.tokenizer.next() {
                 let token = token?;
-                match current { Some(expression) => {
-                    // CloseParen is the end of an expression block, return parsed expression.
-                    if token.kind == TokenKind::CloseParen {
-                        return Ok(Some(expression));
+                match current {
+                    Some(expression) => {
+                        // CloseParen is the end of an expression block, return parsed expression.
+                        if token.kind == TokenKind::CloseParen {
+                            return Ok(Some(expression));
+                        }
+                        // look for next operation
+                        current = self.parse_operation(token, expression)?;
                     }
-                    // look for next operation
-                    current = self.parse_operation(token, expression)?;
-                } _ => {
-                    // look for next value
-                    current = Some(self.parse_value(token)?);
-                }}
+                    _ => {
+                        // look for next value
+                        current = Some(self.parse_value(token)?);
+                    }
+                }
             } else {
                 return Ok(current);
             }
@@ -422,26 +424,23 @@ impl<'a> Parser<'a> {
                             TokenKind::CloseBracket => {
                                 break;
                             }
-                            TokenKind::Comma => continue, // optional for defining arrays
+                            TokenKind::Comma => {} // optional for defining arrays
                             _ => {
                                 arr.push(self.parse_value(token)?);
                             }
-                        };
+                        }
                     } else {
                         return Err(anyhow!("unclosed Array '['"));
                     }
                 }
                 Ok(Box::new(Arr { arr }))
             }
-            TokenKind::OpenParen => {
-                match self.parse_expression()? { Some(expression) => {
-                    Ok(expression)
-                } _ => {
-                    Err(anyhow!(
-                        "expression after open parenthesis '(' ends unexpectedly."
-                    ))
-                }}
-            }
+            TokenKind::OpenParen => match self.parse_expression()? {
+                Some(expression) => Ok(expression),
+                _ => Err(anyhow!(
+                    "expression after open parenthesis '(' ends unexpectedly."
+                )),
+            },
             TokenKind::SelectorPath => {
                 let start = token.start as usize;
                 Ok(Box::new(SelectorPath {
@@ -492,13 +491,16 @@ impl<'a> Parser<'a> {
                                 &self.exp[start..start + token.len as usize],
                             );
                             let hm = coercions().read().unwrap();
-                            match hm.get(ident.as_ref()) { Some(f) => {
-                                let (ce, ne) = f(self, const_eligible, expression)?;
-                                const_eligible = ce;
-                                expression = ne;
-                            } _ => {
-                                return Err(anyhow!("invalid COERCE data type '{:?}'", &ident));
-                            }}
+                            match hm.get(ident.as_ref()) {
+                                Some(f) => {
+                                    let (ce, ne) = f(self, const_eligible, expression)?;
+                                    const_eligible = ce;
+                                    expression = ne;
+                                }
+                                _ => {
+                                    return Err(anyhow!("invalid COERCE data type '{:?}'", &ident));
+                                }
+                            }
                         } else {
                             return Err(anyhow!(
                                 "COERCE missing data type identifier, found instead: {:?}",
@@ -508,11 +510,11 @@ impl<'a> Parser<'a> {
                     } else {
                         return Err(anyhow!("no identifier after value for: COERCE"));
                     }
-                    if let Some(Ok(token)) = self.tokenizer.peek() {
-                        if token.kind == TokenKind::Comma {
-                            let _ = self.tokenizer.next(); // consume peeked comma
-                            continue;
-                        }
+                    if let Some(Ok(token)) = self.tokenizer.peek()
+                        && token.kind == TokenKind::Comma
+                    {
+                        let _ = self.tokenizer.next(); // consume peeked comma
+                        continue;
                     }
                     break;
                 }
@@ -523,7 +525,7 @@ impl<'a> Parser<'a> {
                 let value = self.parse_value(next_token)?;
                 Ok(Box::new(Not { value }))
             }
-            _ => Err(anyhow!("token is not a valid value: {:?}", token)),
+            _ => Err(anyhow!("token is not a valid value: {token:?}")),
         }
     }
 
@@ -704,7 +706,7 @@ impl<'a> Parser<'a> {
                 Ok(Some(Box::new(Not { value })))
             }
             TokenKind::CloseBracket => Ok(Some(current)),
-            _ => Err(anyhow!("invalid operation: {:?}", token)),
+            _ => Err(anyhow!("invalid operation: {token:?}")),
         }
     }
 }

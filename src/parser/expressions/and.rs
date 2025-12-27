@@ -11,10 +11,10 @@ impl Expression for And {
     fn calculate(&self, json: &[u8]) -> Result<Value> {
         let left = self.left.calculate(json)?;
 
-        if let Value::Bool(is_true) = left {
-            if !is_true {
-                return Ok(left);
-            }
+        if let Value::Bool(is_true) = left
+            && !is_true
+        {
+            return Ok(left);
         }
 
         let right = self.right.calculate(json)?;
