@@ -341,6 +341,13 @@ pub trait Expression: Debug + Send + Sync {
     fn calculate(&self, json: &[u8]) -> Result<Value>;
 }
 
+impl<T: Expression + ?Sized> Expression for Box<T> {
+    fn calculate(&self, json: &[u8]) -> Result<Value> {
+        // Defer the method call to the inner T
+        (**self).calculate(json)
+    }
+}
+
 /// Is an alias for a Box<dyn Expression>
 pub(in crate::parser) type BoxedExpression = Box<dyn Expression>;
 

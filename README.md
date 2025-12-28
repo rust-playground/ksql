@@ -1,21 +1,24 @@
 # ksql &emsp; [![Latest Version]][crates.io]
 
 [Latest Version]: https://img.shields.io/crates/v/ksql.svg
+
 [crates.io]: https://crates.io/crates/ksql
 
 **Is a JSON data expression lexer, parser, cli and library.**
 
 #### How to install CLI
+
 ```shell
 ~ cargo install ksql
 ```
 
 #### Usage
+
 ```rust
 use ksql::parser::{Parser, Value};
 use std::error::Error;
 
-fn main() -> Result<(), Box<dyn Error>>{
+fn main() -> Result<(), Box<dyn Error>> {
     let src = r#"{"name":"MyCompany", "properties":{"employees": 50}"#.as_bytes();
     let expression = ".properties.employees > 20";
     let ex = Parser::parse(expression.as_bytes())?;
@@ -26,13 +29,17 @@ fn main() -> Result<(), Box<dyn Error>>{
 ```
 
 #### CLI Usage
+
 ```shell
-~ ksql '(.field1 + 1) /2' '{"field1": 1}'
-or
 echo '{"field1": 1}' | ksql '(.field1 + 1) /2'
 ```
 
+```shell
+ksql -f filename.jsonl '(.field1 + 1) /2'
+```
+
 #### Expressions
+
 Expressions support most mathematical and string expressions see below for details:
 
 #### Syntax & Rules
