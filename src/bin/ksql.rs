@@ -1,9 +1,15 @@
 use clap::Parser as ClapParser;
 use ksql::parser::{Expression, Parser, Value};
+use memchr::{memchr, memchr_iter};
 use memmap2::Mmap;
 use std::env;
 use std::fs::File;
-use std::io::{stdin, stdout, BufRead, BufReader, BufWriter, Write};
+use std::io::{stdin, stdout, BufRead, BufWriter, Write};
+use std::sync::Arc;
+
+const DEFAULT_BATCH_SIZE: usize = 10_000;
+const NEWLINE: u8 = b'\n';
+const NEWLINE_SLICE: &[u8] = b"\n";
 
 #[derive(Debug, ClapParser)]
 #[clap(version = env!("CARGO_PKG_VERSION"), author = env!("CARGO_PKG_AUTHORS"), about = env!("CARGO_PKG_DESCRIPTION"))]
@@ -26,81 +32,188 @@ pub struct Opts {
 fn main() -> anyhow::Result<()> {
     let opts: Opts = Opts::parse();
 
-    let ex = Parser::parse(&opts.expression)?;
+    if opts.file.is_some() {
+        process_file(opts)?;
+    } else {
+        process_stdin(opts)?;
+    }
 
+    Ok(())
+}
+
+#[inline]
+fn process_file(opts: Opts) -> anyhow::Result<()> {
+    let file = File::open(&opts.file.unwrap())?;
+    let map = unsafe { Mmap::map(&file)? };
+    let nthreads = std::thread::available_parallelism().unwrap().get() - 1;
     let mut stdout = BufWriter::new(stdout().lock());
 
-    if let Some(file) = opts.file {
-        process_file(&file, &ex, &mut stdout, opts.output_original)?;
+    let ex = Arc::new(Parser::parse(&opts.expression).unwrap());
+
+    if opts.output_original {
+        std::thread::scope(|scope| {
+            let mut at = 0;
+            let (tx, rx) = std::sync::mpsc::sync_channel(nthreads * 2);
+            let chunk_size = map.len() / nthreads;
+
+            for _ in 0..nthreads {
+                let start = at;
+                let end = (at + chunk_size).min(map.len());
+                let end = if end == map.len() {
+                    map.len()
+                } else {
+                    let newline_at = memchr(NEWLINE, &map[end..]).unwrap();
+                    end + newline_at + 1
+                };
+                let map = &map[start..end];
+                if map.is_empty() {
+                    break;
+                }
+                at = end;
+                let tx = tx.clone();
+                let ex = ex.clone();
+                scope.spawn(move || {
+                    process_chunk_original(map, &tx, DEFAULT_BATCH_SIZE, ex.as_ref()).unwrap();
+                });
+            }
+
+            drop(tx);
+
+            for results in rx {
+                for r in results {
+                    stdout.write_all(&r).unwrap();
+                    stdout.write_all(NEWLINE_SLICE).unwrap();
+                }
+            }
+        });
     } else {
-        process_stdin(&ex, &mut stdout, opts.output_original)?;
+        std::thread::scope(|scope| {
+            let mut at = 0;
+            let (tx, rx) = std::sync::mpsc::sync_channel(nthreads * 2);
+            let chunk_size = map.len() / nthreads;
+
+            for _ in 0..nthreads {
+                let start = at;
+                let end = (at + chunk_size).min(map.len());
+                let end = if end == map.len() {
+                    map.len()
+                } else {
+                    let newline_at = memchr(NEWLINE, &map[end..]).unwrap();
+                    end + newline_at + 1
+                };
+                let map = &map[start..end];
+                if map.is_empty() {
+                    break;
+                }
+                at = end;
+                let tx = tx.clone();
+                let ex = ex.clone();
+                scope.spawn(move || {
+                    process_chunk(map, &tx, DEFAULT_BATCH_SIZE, ex.as_ref()).unwrap();
+                });
+            }
+
+            drop(tx);
+
+            for results in rx {
+                for r in results {
+                    serde_json::to_writer(&mut stdout, &r).unwrap();
+                    stdout.write_all(NEWLINE_SLICE).unwrap();
+                }
+            }
+        });
+    }
+
+    Ok(())
+}
+
+#[inline]
+fn process_stdin(opts: Opts) -> anyhow::Result<()> {
+    let ex = Parser::parse(&opts.expression).unwrap();
+    let mut stdin = stdin().lock();
+    let mut stdout = BufWriter::new(stdout().lock());
+    let mut line = Vec::new();
+
+    if opts.output_original {
+        while stdin.read_until(NEWLINE, &mut line)? > 0 {
+            let v = ex.calculate(&line)?;
+            if let Value::Bool(true) = v {
+                stdout.write_all(&line)?;
+                stdout.write_all(NEWLINE_SLICE)?;
+            }
+            line.clear();
+        }
+    } else {
+        while stdin.read_until(NEWLINE, &mut line)? > 0 {
+            let v = ex.calculate(&line)?;
+            serde_json::to_writer(&mut stdout, &v)?;
+            stdout.write_all(NEWLINE_SLICE)?;
+            line.clear();
+        }
     }
     Ok(())
 }
 
 #[inline]
-fn process_file(
-    file: &str,
+fn process_chunk(
+    chunk: &[u8],
+    tx: &std::sync::mpsc::SyncSender<Vec<Value>>,
+    batch_size: usize,
     ex: &dyn Expression,
-    stdout: &mut impl Write,
-    output_original: bool,
 ) -> anyhow::Result<()> {
-    let file = File::open(file)?;
-    let mmap = unsafe { Mmap::map(&file)? };
+    let mut start = 0;
+    let mut to_write = Vec::with_capacity(batch_size);
 
-    if output_original {
-        for data in mmap.split(|b| *b == b'\n') {
-            process_line_original_output(data, ex, &mut *stdout)?;
+    for end in memchr_iter(NEWLINE, chunk) {
+        let line = &chunk[start..end];
+
+        let v = ex.calculate(line)?;
+        to_write.push(v);
+
+        if to_write.len() >= batch_size {
+            tx.send(to_write)?;
+            to_write = Vec::with_capacity(batch_size);
         }
-    } else {
-        for data in mmap.split(|b| *b == b'\n') {
-            process_line(data, ex, &mut *stdout)?;
-        }
+
+        start = end + 1;
+    }
+
+    if !to_write.is_empty() {
+        tx.send(to_write)?;
     }
     Ok(())
 }
 
 #[inline]
-fn process_stdin(
+fn process_chunk_original(
+    chunk: &[u8],
+    tx: &std::sync::mpsc::SyncSender<Vec<Vec<u8>>>,
+    batch_size: usize,
     ex: &dyn Expression,
-    stdout: &mut impl Write,
-    output_original: bool,
 ) -> anyhow::Result<()> {
-    let mut stdin = BufReader::new(stdin().lock());
-    let mut data = Vec::new();
+    let mut start = 0;
+    let mut to_write = Vec::with_capacity(batch_size);
 
-    if output_original {
-        while stdin.read_until(b'\n', &mut data)? > 0 {
-            process_line_original_output(&data, ex, &mut *stdout)?;
-            data.clear();
+    let newline_indices = memchr_iter(NEWLINE, chunk);
+
+    for newline_index in newline_indices {
+        let line = &chunk[start..newline_index];
+
+        let v = ex.calculate(line)?;
+        if let Value::Bool(true) = v {
+            to_write.push(line.to_vec());
+
+            if to_write.len() >= batch_size {
+                tx.send(to_write)?;
+                to_write = Vec::with_capacity(batch_size);
+            }
         }
-    } else {
-        while stdin.read_until(b'\n', &mut data)? > 0 {
-            process_line(&data, ex, &mut *stdout)?;
-            data.clear();
-        }
+
+        start = newline_index + 1;
     }
-    Ok(())
-}
 
-#[inline]
-fn process_line(line: &[u8], ex: &dyn Expression, stdout: &mut impl Write) -> anyhow::Result<()> {
-    let v = ex.calculate(line)?;
-    serde_json::to_writer(&mut *stdout, &v)?;
-    stdout.write_all(b"\n")?;
-    Ok(())
-}
-
-#[inline]
-fn process_line_original_output(
-    line: &[u8],
-    ex: &dyn Expression,
-    stdout: &mut impl Write,
-) -> anyhow::Result<()> {
-    let v = ex.calculate(line)?;
-    if let Value::Bool(true) = v {
-        stdout.write_all(line)?;
-        stdout.write_all(b"\n")?;
+    if !to_write.is_empty() {
+        tx.send(to_write)?;
     }
     Ok(())
 }
