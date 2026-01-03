@@ -38,17 +38,17 @@ fn main() -> anyhow::Result<()> {
     let opts: Opts = Opts::parse();
 
     if opts.file.is_some() {
-        process_file(opts)?;
+        process_file(&opts)?;
     } else {
-        process_stdin(opts)?;
+        process_stdin(&opts)?;
     }
 
     Ok(())
 }
 
 #[inline]
-fn process_file(opts: Opts) -> anyhow::Result<()> {
-    let file = File::open(&opts.file.unwrap())?;
+fn process_file(opts: &Opts) -> anyhow::Result<()> {
+    let file = File::open(opts.file.as_ref().unwrap())?;
     let map = unsafe { Mmap::map(&file)? };
     let nthreads = max(
         opts.pthreads
@@ -138,7 +138,7 @@ fn process_file(opts: Opts) -> anyhow::Result<()> {
 }
 
 #[inline]
-fn process_stdin(opts: Opts) -> anyhow::Result<()> {
+fn process_stdin(opts: &Opts) -> anyhow::Result<()> {
     let ex = Parser::parse(&opts.expression).unwrap();
     let mut stdin = stdin().lock();
     let mut stdout = BufWriter::new(stdout().lock());
