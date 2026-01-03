@@ -2,6 +2,7 @@ use clap::Parser as ClapParser;
 use ksql::parser::{Expression, Parser, Value};
 use memchr::{memchr, memchr_iter};
 use memmap2::Mmap;
+use std::cmp::max;
 use std::env;
 use std::fs::File;
 use std::io::{stdin, stdout, BufRead, BufWriter, Write};
@@ -24,6 +25,10 @@ pub struct Opts {
     #[clap(short, long)]
     pub file: Option<String>,
 
+    /// Number of parallel threads to use when processing a file. Defaults to number of available CPUs.
+    #[clap(short, long)]
+    pub pthreads: Option<usize>,
+
     /// ksql expression to apply to input.
     #[clap()]
     pub expression: String,
@@ -45,7 +50,12 @@ fn main() -> anyhow::Result<()> {
 fn process_file(opts: Opts) -> anyhow::Result<()> {
     let file = File::open(&opts.file.unwrap())?;
     let map = unsafe { Mmap::map(&file)? };
-    let nthreads = std::thread::available_parallelism().unwrap().get() - 1;
+    let nthreads = max(
+        opts.pthreads
+            .unwrap_or_else(|| std::thread::available_parallelism().unwrap().get())
+            - 1,
+        1,
+    );
     let mut stdout = BufWriter::new(stdout().lock());
 
     let ex = Arc::new(Parser::parse(&opts.expression).unwrap());
