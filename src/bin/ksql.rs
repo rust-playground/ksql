@@ -8,7 +8,6 @@ use std::fs::File;
 use std::io::{stdin, stdout, BufRead, BufWriter, Write};
 use std::sync::Arc;
 
-const DEFAULT_BATCH_SIZE: usize = 10_000;
 const NEWLINE: u8 = b'\n';
 const NEWLINE_SLICE: &[u8] = b"\n";
 
@@ -29,6 +28,10 @@ pub struct Opts {
     /// Set to 1 to maintain output order matching input order (FIFO). Parallel processing may produce out-of-order results.
     #[clap(short, long)]
     pub pthreads: Option<usize>,
+
+    /// Batch size for parallel processing. Larger batches improve throughput but use more memory.
+    #[clap(long, default_value = "10000")]
+    pub batch_size: usize,
 
     /// ksql expression to apply to input.
     #[clap()]
@@ -66,6 +69,7 @@ fn process_file(opts: &Opts) -> anyhow::Result<()> {
             let mut at = 0;
             let (tx, rx) = std::sync::mpsc::sync_channel(nthreads * 2);
             let chunk_size = map.len() / nthreads;
+            let batch_size = opts.batch_size;
 
             for _ in 0..nthreads {
                 let start = at;
@@ -84,7 +88,7 @@ fn process_file(opts: &Opts) -> anyhow::Result<()> {
                 let tx = tx.clone();
                 let ex = ex.clone();
                 scope.spawn(move || {
-                    process_chunk_original(map, &tx, DEFAULT_BATCH_SIZE, ex.as_ref()).unwrap();
+                    process_chunk_original(map, &tx, batch_size, ex.as_ref()).unwrap();
                 });
             }
 
@@ -102,6 +106,7 @@ fn process_file(opts: &Opts) -> anyhow::Result<()> {
             let mut at = 0;
             let (tx, rx) = std::sync::mpsc::sync_channel(nthreads * 2);
             let chunk_size = map.len() / nthreads;
+            let batch_size = opts.batch_size;
 
             for _ in 0..nthreads {
                 let start = at;
@@ -120,7 +125,7 @@ fn process_file(opts: &Opts) -> anyhow::Result<()> {
                 let tx = tx.clone();
                 let ex = ex.clone();
                 scope.spawn(move || {
-                    process_chunk(map, &tx, DEFAULT_BATCH_SIZE, ex.as_ref()).unwrap();
+                    process_chunk(map, &tx, batch_size, ex.as_ref()).unwrap();
                 });
             }
 
