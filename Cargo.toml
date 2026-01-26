@@ -26,6 +26,7 @@ serde_json = "1.0.148"
 thiserror = "2.0.17"
 memmap2 = "0.9.9"
 memchr = "2.7.6"
+crossbeam-channel = "0.5"
 
 [dev-dependencies]
 criterion = { version = "0.8.1", features = ["html_reports"] }

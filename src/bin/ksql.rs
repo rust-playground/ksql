@@ -1,4 +1,5 @@
 use clap::Parser as ClapParser;
+use crossbeam_channel::bounded;
 use ksql::parser::{Expression, Parser, Value};
 use memchr::{memchr, memchr_iter};
 use memmap2::Mmap;
@@ -68,6 +69,7 @@ fn process_file(opts: &Opts) -> anyhow::Result<()> {
         std::thread::scope(|scope| {
             let mut at = 0;
             let (tx, rx) = std::sync::mpsc::sync_channel(nthreads * 2);
+            let (return_tx, return_rx) = bounded(nthreads * 2);
             let chunk_size = map.len() / nthreads;
             let batch_size = opts.batch_size;
 
@@ -87,24 +89,29 @@ fn process_file(opts: &Opts) -> anyhow::Result<()> {
                 at = end;
                 let tx = tx.clone();
                 let ex = ex.clone();
+                let return_rx = return_rx.clone();
                 scope.spawn(move || {
-                    process_chunk_original(map, &tx, batch_size, ex.as_ref()).unwrap();
+                    process_chunk_original(map, &tx, &return_rx, batch_size, ex.as_ref()).unwrap();
                 });
             }
 
             drop(tx);
 
-            for results in rx {
-                for r in results {
-                    stdout.write_all(&r).unwrap();
+            for mut results in rx {
+                for r in &results {
+                    stdout.write_all(r).unwrap();
                     stdout.write_all(NEWLINE_SLICE).unwrap();
                 }
+                // Return Vec to pool for reuse
+                results.clear();
+                let _ = return_tx.try_send(results);
             }
         });
     } else {
         std::thread::scope(|scope| {
             let mut at = 0;
             let (tx, rx) = std::sync::mpsc::sync_channel(nthreads * 2);
+            let (return_tx, return_rx) = bounded(nthreads * 2);
             let chunk_size = map.len() / nthreads;
             let batch_size = opts.batch_size;
 
@@ -124,18 +131,22 @@ fn process_file(opts: &Opts) -> anyhow::Result<()> {
                 at = end;
                 let tx = tx.clone();
                 let ex = ex.clone();
+                let return_rx = return_rx.clone();
                 scope.spawn(move || {
-                    process_chunk(map, &tx, batch_size, ex.as_ref()).unwrap();
+                    process_chunk(map, &tx, &return_rx, batch_size, ex.as_ref()).unwrap();
                 });
             }
 
             drop(tx);
 
-            for results in rx {
-                for r in results {
-                    serde_json::to_writer(&mut stdout, &r).unwrap();
+            for mut results in rx {
+                for r in &results {
+                    serde_json::to_writer(&mut stdout, r).unwrap();
                     stdout.write_all(NEWLINE_SLICE).unwrap();
                 }
+                // Return Vec to pool for reuse
+                results.clear();
+                let _ = return_tx.try_send(results);
             }
         });
     }
@@ -174,11 +185,19 @@ fn process_stdin(opts: &Opts) -> anyhow::Result<()> {
 fn process_chunk(
     chunk: &[u8],
     tx: &std::sync::mpsc::SyncSender<Vec<Value>>,
+    return_rx: &crossbeam_channel::Receiver<Vec<Value>>,
     batch_size: usize,
     ex: &dyn Expression,
 ) -> anyhow::Result<()> {
     let mut start = 0;
-    let mut to_write = Vec::with_capacity(batch_size);
+    let mut to_write = return_rx
+        .try_recv()
+        .ok()
+        .map(|mut v| {
+            v.clear();
+            v
+        })
+        .unwrap_or_else(|| Vec::with_capacity(batch_size));
 
     for end in memchr_iter(NEWLINE, chunk) {
         let line = &chunk[start..end];
@@ -188,7 +207,14 @@ fn process_chunk(
 
         if to_write.len() >= batch_size {
             tx.send(to_write)?;
-            to_write = Vec::with_capacity(batch_size);
+            to_write = return_rx
+                .try_recv()
+                .ok()
+                .map(|mut v| {
+                    v.clear();
+                    v
+                })
+                .unwrap_or_else(|| Vec::with_capacity(batch_size));
         }
 
         start = end + 1;
@@ -204,11 +230,19 @@ fn process_chunk(
 fn process_chunk_original(
     chunk: &[u8],
     tx: &std::sync::mpsc::SyncSender<Vec<Vec<u8>>>,
+    return_rx: &crossbeam_channel::Receiver<Vec<Vec<u8>>>,
     batch_size: usize,
     ex: &dyn Expression,
 ) -> anyhow::Result<()> {
     let mut start = 0;
-    let mut to_write = Vec::with_capacity(batch_size);
+    let mut to_write = return_rx
+        .try_recv()
+        .ok()
+        .map(|mut v| {
+            v.clear();
+            v
+        })
+        .unwrap_or_else(|| Vec::with_capacity(batch_size));
 
     let newline_indices = memchr_iter(NEWLINE, chunk);
 
@@ -221,7 +255,14 @@ fn process_chunk_original(
 
             if to_write.len() >= batch_size {
                 tx.send(to_write)?;
-                to_write = Vec::with_capacity(batch_size);
+                to_write = return_rx
+                    .try_recv()
+                    .ok()
+                    .map(|mut v| {
+                        v.clear();
+                        v
+                    })
+                    .unwrap_or_else(|| Vec::with_capacity(batch_size));
             }
         }
 
