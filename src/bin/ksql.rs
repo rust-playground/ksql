@@ -26,6 +26,7 @@ pub struct Opts {
     pub file: Option<String>,
 
     /// Number of parallel threads to use when processing a file. Defaults to number of available CPUs.
+    /// Set to 1 to maintain output order matching input order (FIFO). Parallel processing may produce out-of-order results.
     #[clap(short, long)]
     pub pthreads: Option<usize>,
 

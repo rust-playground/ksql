@@ -8,7 +8,13 @@ pub(in crate::parser) struct Arr {
 
 impl Expression for Arr {
     fn calculate(&self, json: &[u8]) -> Result<Value> {
-        let mut arr = Vec::new();
+        // Early return: empty array
+        if self.arr.is_empty() {
+            return Ok(Value::Array(Vec::new()));
+        }
+
+        // Pre-allocate with exact capacity to avoid reallocations
+        let mut arr = Vec::with_capacity(self.arr.len());
         for e in &self.arr {
             arr.push(e.calculate(json)?);
         }
