@@ -25,12 +25,11 @@ impl Expression for ContainsAny {
                     return Ok(Value::Bool(false));
                 }
 
-                // Check each char without allocating Value instances
-                Ok(Value::Bool(s.chars().any(|c| {
-                    let char_str = c.to_string();
+                // Check each char without allocating strings
+                Ok(Value::Bool(s.chars().any(|search_char| {
                     arr.iter().any(|v| {
-                        if let Value::String(s) = v {
-                            s == &char_str
+                        if let Value::String(arr_str) = v {
+                            arr_str.chars().any(|c| c == search_char)
                         } else {
                             false
                         }

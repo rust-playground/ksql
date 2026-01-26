@@ -25,12 +25,11 @@ impl Expression for ContainsAll {
                     return Ok(Value::Bool(s.is_empty()));
                 }
 
-                // Check each char without allocating Value instances
-                Ok(Value::Bool(s.chars().all(|c| {
-                    let char_str = c.to_string();
+                // Check each char without allocating strings
+                Ok(Value::Bool(s.chars().all(|search_char| {
                     arr.iter().any(|v| {
-                        if let Value::String(s) = v {
-                            s == &char_str
+                        if let Value::String(arr_str) = v {
+                            arr_str.chars().any(|c| c == search_char)
                         } else {
                             false
                         }

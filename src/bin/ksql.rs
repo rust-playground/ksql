@@ -192,12 +192,7 @@ fn process_chunk(
     let mut start = 0;
     let mut to_write = return_rx
         .try_recv()
-        .ok()
-        .map(|mut v| {
-            v.clear();
-            v
-        })
-        .unwrap_or_else(|| Vec::with_capacity(batch_size));
+        .unwrap_or_else(|_| Vec::with_capacity(batch_size));
 
     for end in memchr_iter(NEWLINE, chunk) {
         let line = &chunk[start..end];
@@ -209,12 +204,7 @@ fn process_chunk(
             tx.send(to_write)?;
             to_write = return_rx
                 .try_recv()
-                .ok()
-                .map(|mut v| {
-                    v.clear();
-                    v
-                })
-                .unwrap_or_else(|| Vec::with_capacity(batch_size));
+                .unwrap_or_else(|_| Vec::with_capacity(batch_size));
         }
 
         start = end + 1;
@@ -237,12 +227,7 @@ fn process_chunk_original(
     let mut start = 0;
     let mut to_write = return_rx
         .try_recv()
-        .ok()
-        .map(|mut v| {
-            v.clear();
-            v
-        })
-        .unwrap_or_else(|| Vec::with_capacity(batch_size));
+        .unwrap_or_else(|_| Vec::with_capacity(batch_size));
 
     let newline_indices = memchr_iter(NEWLINE, chunk);
 
@@ -257,12 +242,7 @@ fn process_chunk_original(
                 tx.send(to_write)?;
                 to_write = return_rx
                     .try_recv()
-                    .ok()
-                    .map(|mut v| {
-                        v.clear();
-                        v
-                    })
-                    .unwrap_or_else(|| Vec::with_capacity(batch_size));
+                    .unwrap_or_else(|_| Vec::with_capacity(batch_size));
             }
         }
 
