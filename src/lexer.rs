@@ -296,47 +296,17 @@ fn tokenize_identifier(data: &[u8]) -> Result<(TokenKind, u16)> {
 
 #[inline]
 fn tokenize_string(data: &[u8], quote: u8) -> Result<(TokenKind, u16)> {
-    let mut last_backslash = false;
-    let mut ended_with_terminator = false;
-
-    match take_while(&data[1..], |c| match c {
-        b'\\' => {
-            last_backslash = true;
-            true
-        }
-        _ if c == quote => {
-            if last_backslash {
-                last_backslash = false;
-                true
-            } else {
-                ended_with_terminator = true;
-                false
-            }
-        }
-        _ => {
-            last_backslash = false;
-            true
-        }
-    }) {
-        Some(end) => {
-            if ended_with_terminator {
-                Ok((TokenKind::QuotedString, end + 2))
-            } else {
-                Err(Error::UnterminatedString(
-                    String::from_utf8_lossy(data).to_string(),
-                ))
-            }
-        }
-        None => {
-            if !ended_with_terminator || data.len() < 2 {
-                Err(Error::UnterminatedString(
-                    String::from_utf8_lossy(data).to_string(),
-                ))
-            } else {
-                Ok((TokenKind::QuotedString, 2))
-            }
+    let mut i = 1;
+    while i < data.len() {
+        match data[i] {
+            b'\\' => i += 2, // Skip escaped char
+            b if b == quote => return Ok((TokenKind::QuotedString, (i + 1) as u16)),
+            _ => i += 1,
         }
     }
+    Err(Error::UnterminatedString(
+        String::from_utf8_lossy(data).to_string(),
+    ))
 }
 
 #[inline]
