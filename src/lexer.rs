@@ -300,7 +300,12 @@ fn tokenize_string(data: &[u8], quote: u8) -> Result<(TokenKind, u16)> {
     while i < data.len() {
         match data[i] {
             b'\\' => i += 2, // Skip escaped char
-            b if b == quote => return Ok((TokenKind::QuotedString, (i + 1) as u16)),
+            b if b == quote => {
+                return Ok((
+                    TokenKind::QuotedString,
+                    u16::try_from(i + 1).expect("string too long"),
+                ));
+            }
             _ => i += 1,
         }
     }
