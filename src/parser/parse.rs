@@ -15,8 +15,16 @@
 //!
 
 use crate::lexer::{Token, TokenKind, Tokenizer};
+use crate::parser::coercions::{
+    COERCEDateTime, COERCENumber, COERCEString, CoerceLowercase, CoerceSubstr, CoerceTitle,
+    CoerceUppercase, CoercedConst,
+};
+use crate::parser::expressions::{
+    Add, And, Arr, Between, Bool, Contains, ContainsAll, ContainsAny, Div, EndsWith, Eq, Gt, Gte,
+    In, Lt, Lte, Mult, Not, Null, Num, Or, SelectorPath, StartsWith, Str, Sub,
+};
 use anyhow::anyhow;
-use chrono::{DateTime, SecondsFormat, Utc};
+use chrono::{DateTime, Utc};
 use gjson::Kind;
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap};
@@ -294,7 +302,7 @@ impl Display for Value {
     }
 }
 
-impl<'a> From<gjson::Value<'a>> for Value {
+impl From<gjson::Value<'_>> for Value {
     fn from(v: gjson::Value) -> Self {
         match v.kind() {
             Kind::Null => Value::Null,
@@ -333,8 +341,15 @@ pub trait Expression: Debug + Send + Sync {
     fn calculate(&self, json: &[u8]) -> Result<Value>;
 }
 
+impl<T: Expression + ?Sized> Expression for Box<T> {
+    fn calculate(&self, json: &[u8]) -> Result<Value> {
+        // Defer the method call to the inner T
+        (**self).calculate(json)
+    }
+}
+
 /// Is an alias for a Box<dyn Expression>
-type BoxedExpression = Box<dyn Expression>;
+pub(in crate::parser) type BoxedExpression = Box<dyn Expression>;
 
 /// Parses a supplied expression and returns a `BoxedExpression`.
 pub struct Parser<'a> {
@@ -369,10 +384,9 @@ impl<'a> Parser<'a> {
         let mut parser = Parser::new(expression, tokenizer);
         let result = parser.parse_expression()?;
 
-        if let Some(result) = result {
-            Ok(result)
-        } else {
-            Err(anyhow!("no expression results found"))
+        match result {
+            Some(result) => Ok(result),
+            _ => Err(anyhow!("no expression results found")),
         }
     }
 
@@ -383,16 +397,19 @@ impl<'a> Parser<'a> {
         loop {
             if let Some(token) = self.tokenizer.next() {
                 let token = token?;
-                if let Some(expression) = current {
-                    // CloseParen is the end of an expression block, return parsed expression.
-                    if token.kind == TokenKind::CloseParen {
-                        return Ok(Some(expression));
+                match current {
+                    Some(expression) => {
+                        // CloseParen is the end of an expression block, return parsed expression.
+                        if token.kind == TokenKind::CloseParen {
+                            return Ok(Some(expression));
+                        }
+                        // look for next operation
+                        current = self.parse_operation(token, expression)?;
                     }
-                    // look for next operation
-                    current = self.parse_operation(token, expression)?;
-                } else {
-                    // look for next value
-                    current = Some(self.parse_value(token)?);
+                    _ => {
+                        // look for next value
+                        current = Some(self.parse_value(token)?);
+                    }
                 }
             } else {
                 return Ok(current);
@@ -414,26 +431,23 @@ impl<'a> Parser<'a> {
                             TokenKind::CloseBracket => {
                                 break;
                             }
-                            TokenKind::Comma => continue, // optional for defining arrays
+                            TokenKind::Comma => {} // optional for defining arrays
                             _ => {
                                 arr.push(self.parse_value(token)?);
                             }
-                        };
+                        }
                     } else {
                         return Err(anyhow!("unclosed Array '['"));
                     }
                 }
                 Ok(Box::new(Arr { arr }))
             }
-            TokenKind::OpenParen => {
-                if let Some(expression) = self.parse_expression()? {
-                    Ok(expression)
-                } else {
-                    Err(anyhow!(
-                        "expression after open parenthesis '(' ends unexpectedly."
-                    ))
-                }
-            }
+            TokenKind::OpenParen => match self.parse_expression()? {
+                Some(expression) => Ok(expression),
+                _ => Err(anyhow!(
+                    "expression after open parenthesis '(' ends unexpectedly."
+                )),
+            },
             TokenKind::SelectorPath => {
                 let start = token.start as usize;
                 Ok(Box::new(SelectorPath {
@@ -484,12 +498,15 @@ impl<'a> Parser<'a> {
                                 &self.exp[start..start + token.len as usize],
                             );
                             let hm = coercions().read().unwrap();
-                            if let Some(f) = hm.get(ident.as_ref()) {
-                                let (ce, ne) = f(self, const_eligible, expression)?;
-                                const_eligible = ce;
-                                expression = ne;
-                            } else {
-                                return Err(anyhow!("invalid COERCE data type '{:?}'", &ident));
+                            match hm.get(ident.as_ref()) {
+                                Some(f) => {
+                                    let (ce, ne) = f(self, const_eligible, expression)?;
+                                    const_eligible = ce;
+                                    expression = ne;
+                                }
+                                _ => {
+                                    return Err(anyhow!("invalid COERCE data type '{:?}'", &ident));
+                                }
                             }
                         } else {
                             return Err(anyhow!(
@@ -500,11 +517,11 @@ impl<'a> Parser<'a> {
                     } else {
                         return Err(anyhow!("no identifier after value for: COERCE"));
                     }
-                    if let Some(Ok(token)) = self.tokenizer.peek() {
-                        if token.kind == TokenKind::Comma {
-                            let _ = self.tokenizer.next(); // consume peeked comma
-                            continue;
-                        }
+                    if let Some(Ok(token)) = self.tokenizer.peek()
+                        && token.kind == TokenKind::Comma
+                    {
+                        let _ = self.tokenizer.next(); // consume peeked comma
+                        continue;
                     }
                     break;
                 }
@@ -515,7 +532,7 @@ impl<'a> Parser<'a> {
                 let value = self.parse_value(next_token)?;
                 Ok(Box::new(Not { value }))
             }
-            _ => Err(anyhow!("token is not a valid value: {:?}", token)),
+            _ => Err(anyhow!("token is not a valid value: {token:?}")),
         }
     }
 
@@ -696,652 +713,8 @@ impl<'a> Parser<'a> {
                 Ok(Some(Box::new(Not { value })))
             }
             TokenKind::CloseBracket => Ok(Some(current)),
-            _ => Err(anyhow!("invalid operation: {:?}", token)),
+            _ => Err(anyhow!("invalid operation: {token:?}")),
         }
-    }
-}
-
-#[derive(Debug)]
-struct Between {
-    left: BoxedExpression,
-    right: BoxedExpression,
-    value: BoxedExpression,
-}
-
-impl Expression for Between {
-    fn calculate(&self, json: &[u8]) -> Result<Value> {
-        let left = self.left.calculate(json)?;
-        let right = self.right.calculate(json)?;
-        let value = self.value.calculate(json)?;
-
-        match (value, left, right) {
-            (Value::String(v), Value::String(lhs), Value::String(rhs)) => {
-                Ok(Value::Bool(v > lhs && v < rhs))
-            }
-            (Value::Number(v), Value::Number(lhs), Value::Number(rhs)) => {
-                Ok(Value::Bool(v > lhs && v < rhs))
-            }
-            (Value::DateTime(v), Value::DateTime(lhs), Value::DateTime(rhs)) => {
-                Ok(Value::Bool(v > lhs && v < rhs))
-            }
-            (Value::Null, _, _) | (_, Value::Null, _) | (_, _, Value::Null) => {
-                Ok(Value::Bool(false))
-            }
-            (v, lhs, rhs) => Err(Error::UnsupportedTypeComparison(format!(
-                "{v} BETWEEN {lhs} {rhs}",
-            ))),
-        }
-    }
-}
-
-#[derive(Debug)]
-struct COERCENumber {
-    value: BoxedExpression,
-}
-
-impl Expression for COERCENumber {
-    #[allow(clippy::cast_precision_loss)]
-    fn calculate(&self, json: &[u8]) -> Result<Value> {
-        let value = self.value.calculate(json)?;
-        match value {
-            Value::String(s) => Ok(Value::Number(
-                s.parse::<f64>()
-                    .map_err(|e| Error::UnsupportedCOERCE(e.to_string()))?,
-            )),
-            Value::Number(num) => Ok(Value::Number(num)),
-            Value::Bool(b) => Ok(Value::Number(if b { 1.0 } else { 0.0 })),
-            Value::DateTime(dt) => Ok(Value::Number(
-                dt.timestamp_nanos_opt().unwrap_or_default() as f64
-            )),
-            _ => Err(Error::UnsupportedCOERCE(
-                format!("{value} COERCE datetime",),
-            )),
-        }
-    }
-}
-
-#[derive(Debug)]
-struct COERCEString {
-    value: BoxedExpression,
-}
-
-impl Expression for COERCEString {
-    fn calculate(&self, json: &[u8]) -> Result<Value> {
-        let value = self.value.calculate(json)?;
-        match value {
-            Value::Null => Ok(Value::String("null".to_string())),
-            Value::String(s) => Ok(Value::String(s)),
-            Value::Number(num) => Ok(Value::String(num.to_string())),
-            Value::Bool(b) => Ok(Value::String(b.to_string())),
-            Value::DateTime(dt) => Ok(Value::String(
-                dt.to_rfc3339_opts(SecondsFormat::AutoSi, true),
-            )),
-            _ => Err(Error::UnsupportedCOERCE(
-                format!("{value} COERCE datetime",),
-            )),
-        }
-    }
-}
-
-#[derive(Debug)]
-struct COERCEDateTime {
-    value: BoxedExpression,
-}
-
-impl Expression for COERCEDateTime {
-    fn calculate(&self, json: &[u8]) -> Result<Value> {
-        let value = self.value.calculate(json)?;
-
-        match value {
-            Value::String(ref s) => match anydate::parse_utc(s) {
-                Err(_) => Ok(Value::Null),
-                Ok(dt) => Ok(Value::DateTime(dt)),
-            },
-            Value::Null => Ok(value),
-            value => Err(Error::UnsupportedCOERCE(
-                format!("{value} COERCE datetime",),
-            )),
-        }
-    }
-}
-
-#[derive(Debug)]
-struct Add {
-    left: BoxedExpression,
-    right: BoxedExpression,
-}
-
-impl Expression for Add {
-    fn calculate(&self, json: &[u8]) -> Result<Value> {
-        let left = self.left.calculate(json)?;
-        let right = self.right.calculate(json)?;
-
-        match (left, right) {
-            (Value::String(s1), Value::String(ref s2)) => Ok(Value::String(s1 + s2)),
-            (Value::String(s1), Value::Null) => Ok(Value::String(s1)),
-            (Value::Null, Value::String(s2)) => Ok(Value::String(s2)),
-            (Value::Number(n1), Value::Number(n2)) => Ok(Value::Number(n1 + n2)),
-            (Value::Number(n1), Value::Null) => Ok(Value::Number(n1)),
-            (Value::Null, Value::Number(n2)) => Ok(Value::Number(n2)),
-            (l, r) => Err(Error::UnsupportedTypeComparison(format!("{l} + {r}",))),
-        }
-    }
-}
-
-#[derive(Debug)]
-struct Sub {
-    left: BoxedExpression,
-    right: BoxedExpression,
-}
-
-impl Expression for Sub {
-    fn calculate(&self, json: &[u8]) -> Result<Value> {
-        let left = self.left.calculate(json)?;
-        let right = self.right.calculate(json)?;
-
-        match (left, right) {
-            (Value::Number(n1), Value::Number(n2)) => Ok(Value::Number(n1 - n2)),
-            (l, r) => Err(Error::UnsupportedTypeComparison(format!("{l} - {r}",))),
-        }
-    }
-}
-
-#[derive(Debug)]
-struct Mult {
-    left: BoxedExpression,
-    right: BoxedExpression,
-}
-
-impl Expression for Mult {
-    fn calculate(&self, json: &[u8]) -> Result<Value> {
-        let left = self.left.calculate(json)?;
-        let right = self.right.calculate(json)?;
-
-        match (left, right) {
-            (Value::Number(n1), Value::Number(n2)) => Ok(Value::Number(n1 * n2)),
-            (l, r) => Err(Error::UnsupportedTypeComparison(format!("{l} * {r}",))),
-        }
-    }
-}
-
-#[derive(Debug)]
-struct Div {
-    left: BoxedExpression,
-    right: BoxedExpression,
-}
-
-impl Expression for Div {
-    fn calculate(&self, json: &[u8]) -> Result<Value> {
-        let left = self.left.calculate(json)?;
-        let right = self.right.calculate(json)?;
-
-        match (left, right) {
-            (Value::Number(n1), Value::Number(n2)) => Ok(Value::Number(n1 / n2)),
-            (l, r) => Err(Error::UnsupportedTypeComparison(format!("{l} / {r}",))),
-        }
-    }
-}
-
-#[derive(Debug)]
-struct Eq {
-    left: BoxedExpression,
-    right: BoxedExpression,
-}
-
-impl Expression for Eq {
-    fn calculate(&self, json: &[u8]) -> Result<Value> {
-        let left = self.left.calculate(json)?;
-        let right = self.right.calculate(json)?;
-        Ok(Value::Bool(left == right))
-    }
-}
-
-#[derive(Debug)]
-struct Gt {
-    left: BoxedExpression,
-    right: BoxedExpression,
-}
-
-impl Expression for Gt {
-    fn calculate(&self, json: &[u8]) -> Result<Value> {
-        let left = self.left.calculate(json)?;
-        let right = self.right.calculate(json)?;
-
-        match (left, right) {
-            (Value::String(s1), Value::String(s2)) => Ok(Value::Bool(s1 > s2)),
-            (Value::Number(n1), Value::Number(n2)) => Ok(Value::Bool(n1 > n2)),
-            (Value::DateTime(dt1), Value::DateTime(dt2)) => Ok(Value::Bool(dt1 > dt2)),
-            (l, r) => Err(Error::UnsupportedTypeComparison(format!("{l} > {r}",))),
-        }
-    }
-}
-
-#[derive(Debug)]
-struct Gte {
-    left: BoxedExpression,
-    right: BoxedExpression,
-}
-
-impl Expression for Gte {
-    fn calculate(&self, json: &[u8]) -> Result<Value> {
-        let left = self.left.calculate(json)?;
-        let right = self.right.calculate(json)?;
-
-        match (left, right) {
-            (Value::String(s1), Value::String(s2)) => Ok(Value::Bool(s1 >= s2)),
-            (Value::Number(n1), Value::Number(n2)) => Ok(Value::Bool(n1 >= n2)),
-            (Value::DateTime(dt1), Value::DateTime(dt2)) => Ok(Value::Bool(dt1 >= dt2)),
-            (l, r) => Err(Error::UnsupportedTypeComparison(format!("{l} >= {r}",))),
-        }
-    }
-}
-
-#[derive(Debug)]
-struct Lt {
-    left: BoxedExpression,
-    right: BoxedExpression,
-}
-
-impl Expression for Lt {
-    fn calculate(&self, json: &[u8]) -> Result<Value> {
-        let left = self.left.calculate(json)?;
-        let right = self.right.calculate(json)?;
-
-        match (left, right) {
-            (Value::String(s1), Value::String(s2)) => Ok(Value::Bool(s1 < s2)),
-            (Value::Number(n1), Value::Number(n2)) => Ok(Value::Bool(n1 < n2)),
-            (Value::DateTime(dt1), Value::DateTime(dt2)) => Ok(Value::Bool(dt1 < dt2)),
-            (l, r) => Err(Error::UnsupportedTypeComparison(format!("{l} < {r}",))),
-        }
-    }
-}
-
-#[derive(Debug)]
-struct Lte {
-    left: BoxedExpression,
-    right: BoxedExpression,
-}
-
-impl Expression for Lte {
-    fn calculate(&self, json: &[u8]) -> Result<Value> {
-        let left = self.left.calculate(json)?;
-        let right = self.right.calculate(json)?;
-
-        match (left, right) {
-            (Value::String(s1), Value::String(s2)) => Ok(Value::Bool(s1 <= s2)),
-            (Value::Number(n1), Value::Number(n2)) => Ok(Value::Bool(n1 <= n2)),
-            (Value::DateTime(dt1), Value::DateTime(dt2)) => Ok(Value::Bool(dt1 <= dt2)),
-            (l, r) => Err(Error::UnsupportedTypeComparison(format!("{l} <= {r}",))),
-        }
-    }
-}
-
-#[derive(Debug)]
-struct CoercedConst {
-    value: Value,
-}
-
-impl Expression for CoercedConst {
-    fn calculate(&self, _json: &[u8]) -> Result<Value> {
-        Ok(self.value.clone())
-    }
-}
-
-#[derive(Debug)]
-struct CoerceLowercase {
-    value: BoxedExpression,
-}
-
-impl Expression for CoerceLowercase {
-    fn calculate(&self, json: &[u8]) -> Result<Value> {
-        let v = self.value.calculate(json)?;
-        match v {
-            Value::String(s) => Ok(Value::String(s.to_lowercase())),
-            v => Err(Error::UnsupportedCOERCE(format!("{v} COERCE lowercase",))),
-        }
-    }
-}
-
-#[derive(Debug)]
-struct CoerceUppercase {
-    value: BoxedExpression,
-}
-
-impl Expression for CoerceUppercase {
-    fn calculate(&self, json: &[u8]) -> Result<Value> {
-        let v = self.value.calculate(json)?;
-        match v {
-            Value::String(s) => Ok(Value::String(s.to_uppercase())),
-            v => Err(Error::UnsupportedCOERCE(format!("{v} COERCE uppercase",))),
-        }
-    }
-}
-
-#[derive(Debug)]
-struct CoerceTitle {
-    value: BoxedExpression,
-}
-
-impl Expression for CoerceTitle {
-    fn calculate(&self, json: &[u8]) -> Result<Value> {
-        let v = self.value.calculate(json)?;
-        match v {
-            Value::String(s) => {
-                let mut c = s.chars();
-                match c.next() {
-                    None => Ok(Value::String(s)),
-                    Some(f) => Ok(Value::String(
-                        f.to_uppercase().collect::<String>() + c.as_str().to_lowercase().as_str(),
-                    )),
-                }
-            }
-            v => Err(Error::UnsupportedCOERCE(format!("{v} COERCE title",))),
-        }
-    }
-}
-
-#[derive(Debug)]
-struct CoerceSubstr {
-    value: BoxedExpression,
-    start_idx: Option<usize>,
-    end_idx: Option<usize>,
-}
-
-impl Expression for CoerceSubstr {
-    fn calculate(&self, json: &[u8]) -> Result<Value> {
-        let v = self.value.calculate(json)?;
-        match v {
-            Value::String(s) => match (self.start_idx, self.end_idx) {
-                (Some(start), Some(end)) => Ok(s
-                    .get(start..end)
-                    .map_or_else(|| Value::Null, |s| Value::String(s.to_string()))),
-                (Some(start), None) => Ok(s
-                    .get(start..)
-                    .map_or_else(|| Value::Null, |s| Value::String(s.to_string()))),
-                (None, Some(end)) => Ok(s
-                    .get(..end)
-                    .map_or_else(|| Value::Null, |s| Value::String(s.to_string()))),
-                _ => Err(Error::UnsupportedCOERCE(format!(
-                    "COERCE substr for {s}, [{:?}:{:?}]",
-                    self.start_idx, self.end_idx
-                ))),
-            },
-            v => Err(Error::UnsupportedCOERCE(format!("{v} COERCE substr",))),
-        }
-    }
-}
-
-#[derive(Debug)]
-struct Not {
-    value: BoxedExpression,
-}
-
-impl Expression for Not {
-    fn calculate(&self, json: &[u8]) -> Result<Value> {
-        let v = self.value.calculate(json)?;
-        match v {
-            Value::Bool(b) => Ok(Value::Bool(!b)),
-            v => Err(Error::UnsupportedTypeComparison(format!("{v:?} for !"))),
-        }
-    }
-}
-
-#[derive(Debug)]
-struct SelectorPath {
-    ident: String,
-}
-
-impl Expression for SelectorPath {
-    fn calculate(&self, json: &[u8]) -> Result<Value> {
-        Ok(unsafe { gjson::get_bytes(json, &self.ident).into() })
-    }
-}
-
-#[derive(Debug)]
-struct Str {
-    s: String,
-}
-
-impl Expression for Str {
-    fn calculate(&self, _: &[u8]) -> Result<Value> {
-        Ok(Value::String(self.s.clone()))
-    }
-}
-
-#[derive(Debug)]
-struct Num {
-    n: f64,
-}
-
-impl Expression for Num {
-    fn calculate(&self, _: &[u8]) -> Result<Value> {
-        Ok(Value::Number(self.n))
-    }
-}
-
-#[derive(Debug)]
-struct Bool {
-    b: bool,
-}
-
-impl Expression for Bool {
-    fn calculate(&self, _: &[u8]) -> Result<Value> {
-        Ok(Value::Bool(self.b))
-    }
-}
-
-#[derive(Debug)]
-struct Null;
-
-impl Expression for Null {
-    fn calculate(&self, _: &[u8]) -> Result<Value> {
-        Ok(Value::Null)
-    }
-}
-
-#[derive(Debug)]
-struct Or {
-    left: BoxedExpression,
-    right: BoxedExpression,
-}
-
-impl Expression for Or {
-    fn calculate(&self, json: &[u8]) -> Result<Value> {
-        let left = self.left.calculate(json)?;
-
-        if let Value::Bool(is_true) = left {
-            if is_true {
-                return Ok(left);
-            }
-        }
-
-        let right = self.right.calculate(json)?;
-
-        match (left, right) {
-            (Value::Bool(b1), Value::Bool(b2)) => Ok(Value::Bool(b1 || b2)),
-            (l, r) => Err(Error::UnsupportedTypeComparison(format!("{l} || {r}",))),
-        }
-    }
-}
-
-#[derive(Debug)]
-struct And {
-    left: BoxedExpression,
-    right: BoxedExpression,
-}
-
-impl Expression for And {
-    fn calculate(&self, json: &[u8]) -> Result<Value> {
-        let left = self.left.calculate(json)?;
-
-        if let Value::Bool(is_true) = left {
-            if !is_true {
-                return Ok(left);
-            }
-        }
-
-        let right = self.right.calculate(json)?;
-
-        match (left, right) {
-            (Value::Bool(b1), Value::Bool(b2)) => Ok(Value::Bool(b1 && b2)),
-            (l, r) => Err(Error::UnsupportedTypeComparison(format!("{l} && {r}",))),
-        }
-    }
-}
-
-#[derive(Debug)]
-struct Contains {
-    left: BoxedExpression,
-    right: BoxedExpression,
-}
-
-impl Expression for Contains {
-    fn calculate(&self, json: &[u8]) -> Result<Value> {
-        let left = self.left.calculate(json)?;
-        let right = self.right.calculate(json)?;
-        match (left, right) {
-            (Value::String(s1), Value::String(s2)) => Ok(Value::Bool(s1.contains(&s2))),
-            (Value::Array(arr1), v) => Ok(Value::Bool(arr1.contains(&v))),
-            (l, r) => Err(Error::UnsupportedTypeComparison(format!(
-                "{l} CONTAINS {r}",
-            ))),
-        }
-    }
-}
-
-#[derive(Debug)]
-struct ContainsAny {
-    left: BoxedExpression,
-    right: BoxedExpression,
-}
-
-impl Expression for ContainsAny {
-    fn calculate(&self, json: &[u8]) -> Result<Value> {
-        let left = self.left.calculate(json)?;
-        let right = self.right.calculate(json)?;
-        match (left, right) {
-            (Value::String(s1), Value::String(s2)) => {
-                let b1: Vec<char> = s1.chars().collect();
-                // betting that lists are short and so less expensive than iterating one to create a hash set
-                Ok(Value::Bool(s2.chars().any(|b| b1.contains(&b))))
-            }
-            (Value::Array(arr1), Value::Array(arr2)) => {
-                Ok(Value::Bool(arr2.iter().any(|v| arr1.contains(v))))
-            }
-            (Value::Array(arr), Value::String(s)) => Ok(Value::Bool(
-                s.chars()
-                    .any(|v| arr.contains(&Value::String(v.to_string()))),
-            )),
-            (Value::String(s), Value::Array(arr)) => Ok(Value::Bool(arr.iter().any(|v| match v {
-                Value::String(s2) => s.contains(s2),
-                _ => false,
-            }))),
-            (l, r) => Err(Error::UnsupportedTypeComparison(format!(
-                "{l} CONTAINS_ANY {r}",
-            ))),
-        }
-    }
-}
-
-#[derive(Debug)]
-struct ContainsAll {
-    left: BoxedExpression,
-    right: BoxedExpression,
-}
-
-impl Expression for ContainsAll {
-    fn calculate(&self, json: &[u8]) -> Result<Value> {
-        let left = self.left.calculate(json)?;
-        let right = self.right.calculate(json)?;
-        match (left, right) {
-            (Value::String(s1), Value::String(s2)) => {
-                let b1: Vec<char> = s1.chars().collect();
-                Ok(Value::Bool(s2.chars().all(|b| b1.contains(&b))))
-            }
-            (Value::Array(arr1), Value::Array(arr2)) => {
-                Ok(Value::Bool(arr2.iter().all(|v| arr1.contains(v))))
-            }
-            (Value::Array(arr), Value::String(s)) => Ok(Value::Bool(
-                s.chars()
-                    .all(|v| arr.contains(&Value::String(v.to_string()))),
-            )),
-            (Value::String(s), Value::Array(arr)) => Ok(Value::Bool(arr.iter().all(|v| match v {
-                Value::String(s2) => s.contains(s2),
-                _ => false,
-            }))),
-            (l, r) => Err(Error::UnsupportedTypeComparison(format!(
-                "{l} CONTAINS_ALL {r}",
-            ))),
-        }
-    }
-}
-
-#[derive(Debug)]
-struct StartsWith {
-    left: BoxedExpression,
-    right: BoxedExpression,
-}
-
-impl Expression for StartsWith {
-    fn calculate(&self, json: &[u8]) -> Result<Value> {
-        let left = self.left.calculate(json)?;
-        let right = self.right.calculate(json)?;
-
-        match (left, right) {
-            (Value::String(s1), Value::String(s2)) => Ok(Value::Bool(s1.starts_with(&s2))),
-            (l, r) => Err(Error::UnsupportedTypeComparison(format!("{l} + {r}",))),
-        }
-    }
-}
-
-#[derive(Debug)]
-struct EndsWith {
-    left: BoxedExpression,
-    right: BoxedExpression,
-}
-
-impl Expression for EndsWith {
-    fn calculate(&self, json: &[u8]) -> Result<Value> {
-        let left = self.left.calculate(json)?;
-        let right = self.right.calculate(json)?;
-
-        match (left, right) {
-            (Value::String(s1), Value::String(s2)) => Ok(Value::Bool(s1.ends_with(&s2))),
-            (l, r) => Err(Error::UnsupportedTypeComparison(format!("{l} + {r}",))),
-        }
-    }
-}
-
-#[derive(Debug)]
-struct In {
-    left: BoxedExpression,
-    right: BoxedExpression,
-}
-
-impl Expression for In {
-    fn calculate(&self, json: &[u8]) -> Result<Value> {
-        let left = self.left.calculate(json)?;
-        let right = self.right.calculate(json)?;
-
-        match (left, right) {
-            (v, Value::Array(a)) => Ok(Value::Bool(a.contains(&v))),
-            (l, r) => Err(Error::UnsupportedTypeComparison(format!("{l} + {r}",))),
-        }
-    }
-}
-
-#[derive(Debug)]
-struct Arr {
-    arr: Vec<BoxedExpression>,
-}
-
-impl Expression for Arr {
-    fn calculate(&self, json: &[u8]) -> Result<Value> {
-        let mut arr = Vec::new();
-        for e in &self.arr {
-            arr.push(e.calculate(json)?);
-        }
-        Ok(Value::Array(arr))
     }
 }
 
@@ -1993,7 +1366,7 @@ mod tests {
         let expression = "COERCE .key _datetime_,_number_";
         let ex = Parser::parse(expression)?;
         let result = ex.calculate(src)?;
-        assert_eq!("1.685427665e18", format!("{result}"));
+        assert_eq!("1.685427665e+18", format!("{result}"));
 
         Ok(())
     }
