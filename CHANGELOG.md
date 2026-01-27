@@ -6,6 +6,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-01-25
+### Breaking Changes
+- **CLI binary data input**: Removed positional data argument. Data must now be piped via stdin or provided using the `-f/--file` flag.
+  - Old: `ksql '.field' '{"field": 1}'`
+  - New: `echo '{"field": 1}' | ksql '.field'` or `ksql -f input.jsonl '.field'`
+
+### Added
+- String coercion (`_string_`) now supports converting arrays and objects to their string representation.
+- File processing mode with `-f/--file` flag to process JSONL files directly using memory-mapped I/O.
+- Parallel processing with `-p/--pthreads` flag to control number of parallel worker threads (defaults to number of CPUs).
+- Tunable batch size with `--batch-size` flag to control batch size for parallel processing (default: 10000).
+
+### Changed
+- Significant performance improvements through Vec pooling, memory-mapped file processing, and parallel execution.
+- Refactored codebase into modular structure with separate expression and coercion modules.
+- Updated dependencies and GitHub Actions workflows.
+
 ## [1.0.0] - 2023-12-29
 ### Changed
 - Updated deps.
@@ -125,7 +142,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Initial release.
 
-[Unreleased]: https://github.com/rust-playground/ksql/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/rust-playground/ksql/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/rust-playground/ksql/compare/v1.0.0...v2.0.0
 [1.0.0]: https://github.com/rust-playground/ksql/compare/v0.12.0...v1.0.0
 [0.12.0]: https://github.com/rust-playground/ksql/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/rust-playground/ksql/compare/v0.10.0...v0.11.0
